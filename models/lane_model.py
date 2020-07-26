@@ -43,12 +43,11 @@ class LaneModel():
         x = keras.layers.MaxPool2D(pool_size=(2, 2), name='bone_pool_5')(x)
 
         x = MobilenetV2IdentityBlock(3, [128*2, 128])(x)
-        x = keras.layers.MaxPool2D(pool_size=(3, 4), name='bone_pool_6')(x)
+        x = keras.layers.MaxPool2D(pool_size=(3, 2), name='bone_pool_6')(x)
 
 
         # --------------------------------------------------------
         
-
         # --------------------------------------------------------
         # feature extend
         x = keras.layers.Flatten()(x)
@@ -56,10 +55,10 @@ class LaneModel():
         lane_2 = keras.layers.Dense(80, name='dense_ext_2')(x)
         lane_3 = keras.layers.Dense(80, name='dense_ext_3')(x)
         lane_4 = keras.layers.Dense(80, name='dense_ext_4')(x)
-        lane_1 = keras.activations.relu(lane_1)
-        lane_2 = keras.activations.relu(lane_2)
-        lane_3 = keras.activations.relu(lane_3)
-        lane_4 = keras.activations.relu(lane_4)
+        # lane_1 = keras.activations.relu(lane_1)
+        # lane_2 = keras.activations.relu(lane_2)
+        # lane_3 = keras.activations.relu(lane_3)
+        # lane_4 = keras.activations.relu(lane_4)
         lane_1 = keras.layers.Dense(self.x_anchors * self.y_anchors)(lane_1)
         lane_2 = keras.layers.Dense(self.x_anchors * self.y_anchors)(lane_2)
         lane_3 = keras.layers.Dense(self.x_anchors * self.y_anchors)(lane_3)
@@ -130,7 +129,7 @@ class LaneModel():
         self.model = model
 
     # -------------------------------------------------------------------
-    def train(self, dataset, train_epochs = 100):
+    def train(self, dataset, train_epochs = 200):
         print("-------------------------------------------------------------------")
         print("train_model")
 
