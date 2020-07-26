@@ -8,22 +8,45 @@ import numpy as np
 from datasets import TusimpleLane
 from models import LaneModel
 
-# y_pred =[[[-10, -5, 0.0, 5, 10],
-#           [-10, -5, 0.0, 5, 10],
-#           [-10, -5, 0.0, 5, 10],
-#           [-10, -5, 0.0, 5, 10]],
-#          [[-10, -5, 0.0, 5, 10],
-#           [-10, -5, 0.0, 5, 10],
-#           [-10, -5, 0.0, 5, 10],
-#           [-10, -5, 0.0, 5, 10]]]
-# y_pred = [[-10, -5, 0.0, 5, 10],
-#           [-10, -5, 0.0, 5, 10]]
-# print("y_pred ", tf.shape(y_pred))
-# a = tf.constant(y_pred, dtype = tf.float32)
-# b = tf.keras.activations.softmax(a)
+physical_devices = tf.config.experimental.list_physical_devices('GPU')
+assert len(physical_devices) > 0, "Not enough GPU hardware devices available"
+config = tf.config.experimental.set_memory_growth(physical_devices[0], True)
+
+# a = tf.constant([-20, -1.0, 0.0, 1.0, 2.0], dtype = tf.float32)
+# b = tf.keras.activations.sigmoid(a)
 # print(b.numpy())
-# # [4.539787e-05 6.692851e-03 5.000000e-01 9.933072e-01 9.999546e-01]
+
+# a = tf.constant([
+#                  [[-20, -1.0, 0.0, 1.0, 2.0],
+#                   [-20, -1.0, 0.0, 1.0, 2.0],
+#                   [-20, -1.0, 0.0, 1.0, 2.0],
+#                   [-20, -1.0, 0.0, 1.0, 2.0]],
+#                  [[-20, -1.0, 0.0, 1.0, 2.0],
+#                   [-20, -1.0, 0.0, 1.0, 2.0],
+#                   [-20, -1.0, 0.0, 1.0, 2.0],
+#                   [-20, -1.0, 0.0, 1.0, 2.0]]
+#                 ] , dtype = tf.float32)
+# b = tf.keras.activations.sigmoid(a)
+# print(b.numpy())
 # asdasd
+
+
+
+
+
+# x_in = np.zeros((1, 224, 224, 3), dtype=np.int8)
+# y_out = np.zeros((1, 1000), dtype=np.int8)
+# model = tf.keras.applications.MobileNetV2()
+# model.summary()
+
+# result = model.predict(x_in)
+# start = time.time()
+# for i in range(1000):
+#     result = model.predict(x_in)
+# end = time.time()
+# print("round ", i , " , cost : ", (end - start) / 1000.0, "s")
+# sadasd
+
 
 
 # y_true = [[[0, 0, 1, 0],
@@ -44,29 +67,52 @@ from models import LaneModel
 # asd
 
 # ---------------------------------------------------------------------------------------------------
+# def benchmark(dataset, num_epochs=10):
+#     start_time = time.perf_counter()
+#     for epoch_num in range(num_epochs):
+#         print("epoch_num ", epoch_num)
+#         count = 0
+#         for sample in dataset:
+#             count += 1
+#             # Performing a training step
+#             # print(tf.shape(sample[0]))
+#             # print(tf.shape(sample[1]))
+#             print("train ............................", count)
+#             # time.sleep(0.05)
+#     tf.print("Execution time:", time.perf_counter() - start_time)
+
+
+# ---------------------------------------------------------------------------------------------------
 # config tensorflow to prevent out of memory when training
 physical_devices = tf.config.experimental.list_physical_devices('GPU')
 assert len(physical_devices) > 0, "Not enough GPU hardware devices available"
 config = tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
 
-
-dataset = TusimpleLane("/home/dana/Datasets/ML/TuSimple/train_set", (640, 360), 100, 50, 4)
+net_input_img_size = (512, 288)
+x_anchors = 100
+y_anchors = 64
+max_lane_count = 4
+dataset = TusimpleLane("/home/dana/Datasets/ML/TuSimple/train_set", net_input_img_size, x_anchors, y_anchors, max_lane_count)
 
 
 # titanic_batches = dataset.batch(2).repeat(1)
-titanic_batches = dataset.prefetch(tf.data.experimental.AUTOTUNE).batch(3)
-
+# titanic_batches = dataset.prefetch(tf.data.experimental.AUTOTUNE).batch(200)
+# titanic_batches = dataset.interleave(lambda parameter_list: dataset,
+#                                      cycle_length=100,
+#                                     block_length=1)
+titanic_batches = dataset.batch(1)
 
 for elem in titanic_batches:
     print(tf.shape(elem[0]))
     print(tf.shape(elem[1]))
     # tf.print(elem[1], summarize=-1)
     print("-------------------------------------------------------")
+    break
     # asdasd
 
-# model = LaneModel()
-# model.create()
-# model.load_weight()
-# # model.train(titanic_batches)
-# model.evaluate(titanic_batches)
+model = LaneModel(net_input_img_size, x_anchors, y_anchors, max_lane_count)
+model.create()
+model.load_weight()
+model.train(titanic_batches)
+model.evaluate(titanic_batches)
