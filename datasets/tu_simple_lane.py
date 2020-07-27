@@ -34,15 +34,13 @@ class TusimpleLane(tf.data.Dataset):
             )
         return wrapper
     # ----------------------------------------------------------------------------------------
-    def __new__(self, dataset_path, net_input_img_size, x_anchors, y_anchors, max_lane_count):
+    def __new__(self, dataset_path, label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count):
         if (os.path.exists(dataset_path) == False):
             print("File doesn't exist, path : ", dataset_path)
             exit()
-        train_label_set = ["label_data_0313.json",
-                           "label_data_0531.json",
-                           "label_data_0601.json"]
 
-        label_set = tf.data.Dataset.from_tensor_slices(train_label_set)
+
+        label_set = tf.data.Dataset.from_tensor_slices(label_set)
         pipe = label_set.interleave(
             lambda label_file_name: tf.data.Dataset.from_generator(self._generator,
                                                output_types=(tf.dtypes.string,
@@ -151,7 +149,7 @@ class TusimpleLane(tf.data.Dataset):
                 label_lanes = raw_label["lanes"]
                 label_h_samples = raw_label["h_samples"]
 
-                # if (count >=10):
+                # if (count >=100):
                 #     break
                 # count += 1
                 

@@ -12,27 +12,6 @@ physical_devices = tf.config.experimental.list_physical_devices('GPU')
 assert len(physical_devices) > 0, "Not enough GPU hardware devices available"
 config = tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
-# a = tf.constant([-20, -1.0, 0.0, 1.0, 2.0], dtype = tf.float32)
-# b = tf.keras.activations.softmax (a)
-# print(b.numpy())
-
-# a = tf.constant([
-#                  [[-20, -1.0, 0.0, 1.0, 2.0],
-#                   [-20, -1.0, 0.0, 1.0, 2.0],
-#                   [-20, -1.0, 0.0, 1.0, 2.0],
-#                   [-20, -1.0, 0.0, 1.0, 2.0]],
-#                  [[-20, -1.0, 0.0, 1.0, 2.0],
-#                   [-20, -1.0, 0.0, 1.0, 2.0],
-#                   [-20, -1.0, 0.0, 1.0, 2.0],
-#                   [-20, -1.0, 0.0, 1.0, 2.0]]
-#                 ] , dtype = tf.float32)
-# b = tf.keras.activations.softmax(a)
-# print(a.shape)
-# print(b.numpy())
-# asdasd
-
-
-
 
 
 # x_in = np.zeros((1, 224, 224, 3), dtype=np.int8)
@@ -94,14 +73,22 @@ net_input_img_size = (512, 288)
 x_anchors = 128
 y_anchors = 72
 max_lane_count = 4
-dataset = TusimpleLane("/home/dana/Datasets/ML/TuSimple/train_set", net_input_img_size, x_anchors, y_anchors, max_lane_count)
+train_dataset_path = "/home/dana/Datasets/ML/TuSimple/train_set"
+train_label_set = ["label_data_0313.json",
+                   "label_data_0531.json",
+                   "label_data_0601.json"]
+test_dataset_path = "/home/dana/Datasets/ML/TuSimple/test_set"
+test_label_set = ["test_label.json"]
+
+dataset = TusimpleLane(train_dataset_path, train_label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count)
+# dataset = TusimpleLane(test_dataset_path, test_label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count)
 
 # titanic_batches = dataset.batch(2).repeat(1)
 # titanic_batches = dataset.prefetch(tf.data.experimental.AUTOTUNE).batch(200)
 # titanic_batches = dataset.interleave(lambda parameter_list: dataset,
 #                                      cycle_length=100,
 #                                     block_length=1)
-titanic_batches = dataset.batch(4)
+titanic_batches = dataset.batch(4).shuffle(5000)
 
 for elem in titanic_batches:
     print(tf.shape(elem[0]))
@@ -114,6 +101,7 @@ for elem in titanic_batches:
 model = LaneModel(net_input_img_size, x_anchors, y_anchors, max_lane_count)
 model.create()
 model.load_weight()
-model.train(titanic_batches)
-# model.evaluate(titanic_batches)
+# model.train(titanic_batches)
+model.evaluate(titanic_batches)
+
 
