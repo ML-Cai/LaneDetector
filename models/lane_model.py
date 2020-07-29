@@ -19,19 +19,93 @@ class LaneModel():
         self.max_lane_count = max_lane_count
 
 
-    def _bottleneck(self, inputs, nb_filters, t):
-        x = tf.keras.layers.Conv2D(filters=nb_filters * t, kernel_size=(1,1), padding='same')(inputs)
-        x = tf.keras.activations.relu(x)
-        x = tf.keras.layers.DepthwiseConv2D(kernel_size=(3,3), padding='same')(x)
-        x = tf.keras.activations.relu(x)
-        x = tf.keras.layers.Conv2D(filters=nb_filters, kernel_size=(1,1), padding='same')(x)
+    def _downsample_block(self, inputs, nb_filters, name=''):
+        x = keras.layers.Conv2D(nb_filters, (3, 3), padding='same', name=name+'_conv')(inputs)
+        x = keras.layers.BatchNormalization(name=name+'_bn')(x)
+        x = keras.activations.relu(x)
+        x = keras.layers.MaxPool2D(pool_size=(2, 2), name=name+'_maxpool')(x)
 
-        # do not use activation function
-        if not inputs.get_shape()[3] == nb_filters:
-            inputs = tf.keras.layers.Conv2D(filters=nb_filters, kernel_size=(1,1), padding='same')(inputs)
+        return x
 
-        outputs = tf.keras.layers.add([x, inputs])
-        return outputs
+
+    def _dense_block5(self, inputs, nb_filters, name=''):
+        x = keras.layers.Conv2D(nb_filters, (3, 3), padding='same', name=name+'_conv1')(inputs)
+        x = keras.layers.BatchNormalization(name=name+'_bn1')(x)
+        x = keras.activations.relu(x)
+        con_1 = keras.layers.concatenate([x, inputs], name=name+'con_1')
+         
+        x = con_1
+        x = keras.layers.Conv2D(nb_filters, (3, 3), padding='same', name=name+'_conv2')(x)
+        x = keras.layers.BatchNormalization(name=name+'_bn2')(x)
+        x = keras.activations.relu(x)
+        con_2 = keras.layers.concatenate([x, con_1], name=name+'con_2')
+     
+        x = con_2
+        x = keras.layers.Conv2D(nb_filters, (3, 3), padding='same', name=name+'_conv3')(x)
+        x = keras.layers.BatchNormalization(name=name+'_bn3')(x)
+        x = keras.activations.relu(x)
+        con_3 = keras.layers.concatenate([x, con_2], name=name+'con_3')
+     
+        x = con_3
+        x = keras.layers.Conv2D(nb_filters, (3, 3), padding='same', name=name+'_conv4')(x)
+        x = keras.layers.BatchNormalization(name=name+'_bn4')(x)
+        x = keras.activations.relu(x)
+        con_4 = keras.layers.concatenate([x, con_3], name=name+'con_4')
+    
+        x = con_4
+        x = keras.layers.Conv2D(nb_filters, (3, 3), padding='same', name=name+'_conv5')(x)
+        x = keras.layers.BatchNormalization(name=name+'_bn5')(x)
+        x = keras.activations.relu(x)
+        con_5 = keras.layers.concatenate([x, con_4], name=name+'con_5')
+    
+        x = con_5
+        x = keras.layers.Conv2D(nb_filters, (3, 3), padding='same', name=name+'_conv6')(x)
+        x = keras.layers.BatchNormalization(name=name+'_bn6')(x)
+        x = keras.activations.relu(x)
+        con_6 = keras.layers.concatenate([x, con_5], name=name+'con_6')
+
+        out = con_6
+
+        return out
+
+    def _denseInput_block5(self, inputs, nb_filters, name=''):
+        x = keras.layers.Conv2D(nb_filters, (3, 3), padding='same', name=name+'_conv1')(inputs)
+        x = keras.layers.BatchNormalization(name=name+'_bn1')(x)
+        x = keras.activations.relu(x)
+        con_1 = keras.layers.concatenate([x, inputs], name=name+'con_1')
+         
+        x = con_1
+        x = keras.layers.Conv2D(nb_filters, (3, 3), padding='same', name=name+'_conv2')(x)
+        x = keras.layers.BatchNormalization(name=name+'_bn2')(x)
+        x = keras.activations.relu(x)
+        con_2 = keras.layers.concatenate([x, inputs], name=name+'con_2')
+     
+        x = con_2
+        x = keras.layers.Conv2D(nb_filters, (3, 3), padding='same', name=name+'_conv3')(x)
+        x = keras.layers.BatchNormalization(name=name+'_bn3')(x)
+        x = keras.activations.relu(x)
+        con_3 = keras.layers.concatenate([x, inputs], name=name+'con_3')
+     
+        x = con_3
+        x = keras.layers.Conv2D(nb_filters, (3, 3), padding='same', name=name+'_conv4')(x)
+        x = keras.layers.BatchNormalization(name=name+'_bn4')(x)
+        x = keras.activations.relu(x)
+        con_4 = keras.layers.concatenate([x, inputs], name=name+'con_4')
+    
+        x = con_4
+        x = keras.layers.Conv2D(nb_filters, (3, 3), padding='same', name=name+'_conv5')(x)
+        x = keras.layers.BatchNormalization(name=name+'_bn5')(x)
+        x = keras.activations.relu(x)
+        con_5 = keras.layers.concatenate([x, inputs], name=name+'con_5')
+    
+        x = con_5
+        x = keras.layers.Conv2D(nb_filters, (3, 3), padding='same', name=name+'_conv6')(x)
+        x = keras.layers.BatchNormalization(name=name+'_bn6')(x)
+     
+        out = x
+
+        return out
+
 
     def create(self):
         print("-------------------------------------------------------------------")
@@ -40,130 +114,47 @@ class LaneModel():
         input = keras.Input(shape=(self.net_input_img_size[1], self.net_input_img_size[0], 3))
         x = input
 
-        x = keras.layers.Conv2D(16, (3, 3), padding='same')(x)
-        x = keras.layers.BatchNormalization()(x)
-        x = keras.activations.relu(x)
-        x = keras.layers.MaxPool2D(pool_size=(2, 2), name='bone_pool_1')(x)
-
-        x = keras.layers.Conv2D(24, (3, 3), padding='same')(x)
-        x = keras.layers.BatchNormalization()(x)
-        x = keras.activations.relu(x)
-        x = keras.layers.MaxPool2D(pool_size=(2, 2), name='bone_pool_2')(x)
+        # res block 1
+        x = self._downsample_block(x, 10, name='feature_block_A')
+        x = self._downsample_block(x, 20, name='feature_block_B')
+        x = self._downsample_block(x, 32, name='feature_block_C')
         
-        x = keras.layers.Conv2D(32, (3, 3), padding='same')(x)
-        x = keras.layers.BatchNormalization()(x)
-        x = keras.activations.relu(x)
-        x = keras.layers.MaxPool2D(pool_size=(2, 2), name='bone_pool_3')(x)
+        # dense
+        x = self._dense_block5(x, 16, name='dense_block_A')
 
-        # mobilenet
-        x = MobilenetV2IdentityBlock(3, [60*6, 60])(x)
-        x = keras.layers.MaxPool2D(pool_size=(2, 2), name='bone_pool_4')(x)
+        # transition
+        x = keras.layers.MaxPool2D(pool_size=(2, 2))(x)
 
-        x = MobilenetV2IdentityBlock(3, [92*6, 92])(x)
-        x = keras.layers.MaxPool2D(pool_size=(2, 2), name='bone_pool_5')(x)
+        # dense
+        x = self._dense_block5(x, 16, name='dense_block_B')
 
-        x = MobilenetV2IdentityBlock(3, [128*6, 128])(x)
-        x = keras.layers.MaxPool2D(pool_size=(2, 2), name='bone_pool_6')(x)
-
-        # down sample
-        # x = keras.layers.Conv2D(64, (3, 3), padding='same')(x)
-        # x = keras.layers.BatchNormalization()(x)
-        # x = keras.activations.relu(x)
-        # --------------------------------------------------------
-        # x = MobilenetV2IdentityBlock(3, [16*2, 16])(x)
-        # x = keras.layers.MaxPool2D(pool_size=(2, 2), name='bone_pool_1')(x)
-        # x = MobilenetV2IdentityBlock(3, [24*2, 24])(x)
-        # x = keras.layers.MaxPool2D(pool_size=(2, 2), name='bone_pool_2')(x)
-        # x = MobilenetV2IdentityBlock(3, [32*2, 32])(x)
-        # x = keras.layers.MaxPool2D(pool_size=(2, 2), name='bone_pool_3')(x)
-        # x = MobilenetV2IdentityBlock(3, [64*2, 64])(x)
-        # x = MobilenetV2IdentityBlock(3, [64*2, 64])(x)
-        # x = keras.layers.MaxPool2D(pool_size=(2, 2), name='bone_pool_4')(x)
-        # x = MobilenetV2IdentityBlock(3, [96*2, 96])(x)
-        # x = MobilenetV2IdentityBlock(3, [96*2, 96])(x)
-        # x = keras.layers.MaxPool2D(pool_size=(2, 2), name='bone_pool_5')(x)
-        # x = MobilenetV2IdentityBlock(3, [128*2, 128])(x)
-        # x = keras.layers.MaxPool2D(pool_size=(3, 2), name='bone_pool_6')(x)
-        # --------------------------------------------------------
-
-        # --------------------------------------------------------
-        # feature extend
-        x = keras.layers.Flatten()(x)
-        lane_1 = keras.layers.Dense(90, name='dense_ext_11')(x)
-        lane_2 = keras.layers.Dense(90, name='dense_ext_21')(x)
-        lane_3 = keras.layers.Dense(90, name='dense_ext_31')(x)
-        lane_4 = keras.layers.Dense(90, name='dense_ext_41')(x)
-        lane_1 = keras.activations.relu(lane_1) 
-        lane_2 = keras.activations.relu(lane_2)
-        lane_3 = keras.activations.relu(lane_3)
-        lane_4 = keras.activations.relu(lane_4)
-        lane_1 = keras.layers.Dense(int(self.x_anchors /4 * self.y_anchors / 4))(lane_1)
-        lane_2 = keras.layers.Dense(int(self.x_anchors /4 * self.y_anchors / 4))(lane_2)
-        lane_3 = keras.layers.Dense(int(self.x_anchors /4 * self.y_anchors / 4))(lane_3)
-        lane_4 = keras.layers.Dense(int(self.x_anchors /4 * self.y_anchors / 4))(lane_4)
-        lane_1 = keras.activations.relu(lane_1) ####
-        lane_2 = keras.activations.relu(lane_2)
-        lane_3 = keras.activations.relu(lane_3)
-        lane_4 = keras.activations.relu(lane_4)
-        lane_1 = keras.layers.Reshape((1, int(self.y_anchors /4), int(self.x_anchors / 4)))(lane_1)
-        lane_2 = keras.layers.Reshape((1, int(self.y_anchors /4), int(self.x_anchors / 4)))(lane_2)
-        lane_3 = keras.layers.Reshape((1, int(self.y_anchors /4), int(self.x_anchors / 4)))(lane_3)
-        lane_4 = keras.layers.Reshape((1, int(self.y_anchors /4), int(self.x_anchors / 4)))(lane_4)
-
-        lane_1 = keras.layers.Conv2DTranspose (self.x_anchors, kernel_size=(3, 3), strides=(1, 2), padding='same')(lane_1)
-        lane_2 = keras.layers.Conv2DTranspose (self.x_anchors, kernel_size=(3, 3), strides=(1, 2), padding='same')(lane_2)
-        lane_3 = keras.layers.Conv2DTranspose (self.x_anchors, kernel_size=(3, 3), strides=(1, 2), padding='same')(lane_3)
-        lane_4 = keras.layers.Conv2DTranspose (self.x_anchors, kernel_size=(3, 3), strides=(1, 2), padding='same')(lane_4)
-        lane_1 = keras.activations.relu(lane_1)
-        lane_2 = keras.activations.relu(lane_2)
-        lane_3 = keras.activations.relu(lane_3)
-        lane_4 = keras.activations.relu(lane_4)
-
-        lane_1 = keras.layers.Conv2DTranspose (self.x_anchors, kernel_size=(3, 3), strides=(1, 2), padding='same')(lane_1)
-        lane_2 = keras.layers.Conv2DTranspose (self.x_anchors, kernel_size=(3, 3), strides=(1, 2), padding='same')(lane_2)
-        lane_3 = keras.layers.Conv2DTranspose (self.x_anchors, kernel_size=(3, 3), strides=(1, 2), padding='same')(lane_3)
-        lane_4 = keras.layers.Conv2DTranspose (self.x_anchors, kernel_size=(3, 3), strides=(1, 2), padding='same')(lane_4)
-
-
-
-        lane_1 = keras.layers.Flatten()(lane_1)
-        lane_2 = keras.layers.Flatten()(lane_2)
-        lane_3 = keras.layers.Flatten()(lane_3)
-        lane_4 = keras.layers.Flatten()(lane_4)
-        lane_group =[lane_1, lane_2, lane_3, lane_4]
-        x = keras.layers.concatenate(lane_group, name='concat')
-        # --------------------------------------------------------
+        # transition
+        x = keras.layers.MaxPool2D(pool_size=(2, 2))(x)
         
-        # # --------------------------------------------------------
-        # # feature extend
-        # x = keras.layers.Flatten()(x)
-        # lane_1 = keras.layers.Dense(60, name='dense_ext_11')(x)
-        # lane_2 = keras.layers.Dense(60, name='dense_ext_21')(x)
-        # lane_3 = keras.layers.Dense(60, name='dense_ext_31')(x)
-        # lane_4 = keras.layers.Dense(60, name='dense_ext_41')(x)
-        # # lane_1 = keras.activations.relu(lane_1)
-        # # lane_2 = keras.activations.relu(lane_2)
-        # # lane_3 = keras.activations.relu(lane_3)
-        # # lane_4 = keras.activations.relu(lane_4)
-        # lane_1 = keras.layers.Dense(self.x_anchors * self.y_anchors)(lane_1)
-        # lane_2 = keras.layers.Dense(self.x_anchors * self.y_anchors)(lane_2)
-        # lane_3 = keras.layers.Dense(self.x_anchors * self.y_anchors)(lane_3)
-        # lane_4 = keras.layers.Dense(self.x_anchors * self.y_anchors)(lane_4)
-        # lane_group =[lane_1, lane_2, lane_3, lane_4]
-        # x = keras.layers.concatenate(lane_group, name='concat')
-        # # --------------------------------------------------------
 
-        # # reshape output
-        x = keras.layers.Flatten()(x)
-        x = tf.keras.layers.Reshape((self.max_lane_count, self.y_anchors, self.x_anchors))(x)
+        # transition
+        groups = 16
+        height, width, in_channels = x.shape.as_list()[1:]
+        channels_per_group = in_channels // groups
+        shape_size = height * width * in_channels
+
+        x = keras.backend.reshape(x, [-1, height, width, groups, channels_per_group])
+        x = keras.backend.permute_dimensions(x, (0, 1, 2, 4, 3))  # transpose
+        x = keras.backend.reshape(x, [-1, self.max_lane_count, self.y_anchors, int((shape_size / self.max_lane_count) / self.y_anchors)])
+
+        
+        # dense
+        x = self._denseInput_block5(x, 128, name='dense_block_C')
+
+
         x = tf.keras.activations.softmax(x)
         output = x
 
         model = keras.Model(input, output, name="test")
-
+        loss = LaneLoss()
         optimizer = keras.optimizers.Adam(lr=0.0001)
         model.compile(optimizer=optimizer,
-                      loss=tf.keras.losses.CategoricalCrossentropy(),
+                      loss=loss,
                       metrics=[tf.keras.metrics.CategoricalAccuracy()])
         model.summary()
         # keras.utils.plot_model(model, "my_first_model.png")
@@ -171,7 +162,7 @@ class LaneModel():
         self.model = model
 
     # -------------------------------------------------------------------
-    def train(self, dataset, train_epochs = 100):
+    def train(self, dataset, train_epochs = 200):
         print("-------------------------------------------------------------------")
         print("train_model")
 
@@ -180,13 +171,13 @@ class LaneModel():
                                                         verbose=1, 
                                                         save_weights_only=True,
                                                         period=2)
-        # self.model.save_weights(checkpoint_path.format(epoch=0))
         log_dir = "/home/dana/tmp/logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir,
                                                               histogram_freq=1,
                                                             #   profile_batch = '100,200'
                                                               )
-
+        # ---------------------------
+        # recover point
         history = self.model.fit(dataset,
                                  callbacks=[cp_callback, tensorboard_callback],
                                  epochs = train_epochs)
@@ -214,7 +205,7 @@ class LaneModel():
         idx = 0
         for elem in dataset:
             test_loss, test_acc =  self.model.test_on_batch (x=elem[0], y=elem[1])
-            print('loss: %s, accuracy %s', test_loss, test_acc)
+            print('[%d] loss: %s, accuracy %s', idx, test_loss, test_acc)
 
             prediction = self.model.predict(x=elem[0])
             main_img = np.uint8(elem[0] * 255)
@@ -225,21 +216,27 @@ class LaneModel():
             raw_output= []
             for si in range(self.max_lane_count):
                 output_int8 = np.uint8(prediction[0][si] * 255)
-                img = cv2.merge([zeros, zeros, output_int8])
+                if si == 0:
+                    img = cv2.merge([zeros, zeros, output_int8])
+                elif si ==1:
+                    img = cv2.merge([zeros, output_int8, zeros])
+                elif si ==2:
+                    img = cv2.merge([output_int8, zeros, zeros])
+                elif si ==3:
+                    img = cv2.merge([zeros, output_int8, output_int8])
+                else:
+                    img = cv2.merge([output_int8, zeros, output_int8])
+
                 img = cv2.resize(img, (512, 288))
                 main_img = main_img + img
+                # main_img = img
             
             prefix = str(idx)
             
             cv2.imwrite(prefix + "_aaw.png", main_img)
             idx += 1
-            if (idx >=5):
+            if (idx >=20):
                 break;
-
-        for idx in range(min(5, len(prediction))):
-            print("save ", idx)
-            prefix = str(idx)
-
             
 
             # self.max_lane_count, self.y_anchors,
@@ -345,4 +342,5 @@ class LaneModel():
     def save(self):
         print("-------------------------------------------------------------------")
         print("save_model")
-        self.model.save("/home/dana/tmp/my_model")
+        self.model.save('model.h5', save_format='h5')
+        

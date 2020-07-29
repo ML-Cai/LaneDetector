@@ -31,11 +31,9 @@ class MobilenetV2IdentityBlock(tf.keras.Model):
         # depthwise
         x = self.depthwise_b(x)
         x = self.depthwise_bn_b(x, training=training)
-        x = tf.nn.relu(x)
-        
-        
+                
         # project
-        x = self.conv_c(x)
+        x = self.conv_c(x) 
         x = self.bn_c(x, training=training)
         
         # output

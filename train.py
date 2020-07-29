@@ -12,6 +12,41 @@ physical_devices = tf.config.experimental.list_physical_devices('GPU')
 assert len(physical_devices) > 0, "Not enough GPU hardware devices available"
 config = tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
+y_pred = np.array ([[
+          [
+           [0.0, 0.0, 0.0, 1.0],
+           [0.0, 0.0, 1.0, 0.0],
+           [0.0, 1.0, 0.0, 0.0],
+           [1.0, 0.0, 0.0, 0.0]
+          ],
+          [
+           [1.0, 0.0, 0.0, 0.0],
+           [0.0, 0.0, 1.0, 0.0],
+           [0.0, 1.0, 0.0, 0.0],
+           [0.0, 0.0, 0.0, 1.0]
+          ],
+        ] ])
+        
+print("y_pred.shape ", y_pred.shape)
+
+
+
+# batch, lane_count, y_anchors, x_anchors = y_pred.shape
+# loss_all = []
+# for i in range(0, y_anchors-1):
+#     print(y_pred[:,:,i,:])
+#     print(" ")
+#     print(y_pred[:,:,i+1,:])
+
+#     HUBER_DELTA = 0.5
+#     x  = tf.keras.backend.l2_normalize(y_pred[:,:,i,:])
+#     tf.print(y_pred[:,:,i,:] + y_pred[:,:,i+1,:])
+#     print("-------------------")
+#     loss_all.append(y_pred[:,:,i,:] - y_pred[:,:,i+1,:])
+
+# sys.exit(0)
+
+
 
 
 # x_in = np.zeros((1, 224, 224, 3), dtype=np.int8)
@@ -46,21 +81,6 @@ config = tf.config.experimental.set_memory_growth(physical_devices[0], True)
 # print("accuracy ", m.result().numpy())
 # asd
 
-# ---------------------------------------------------------------------------------------------------
-# def benchmark(dataset, num_epochs=10):
-#     start_time = time.perf_counter()
-#     for epoch_num in range(num_epochs):
-#         print("epoch_num ", epoch_num)
-#         count = 0
-#         for sample in dataset:
-#             count += 1
-#             # Performing a training step
-#             # print(tf.shape(sample[0]))
-#             # print(tf.shape(sample[1]))
-#             print("train ............................", count)
-#             # time.sleep(0.05)
-#     tf.print("Execution time:", time.perf_counter() - start_time)
-
 
 # ---------------------------------------------------------------------------------------------------
 # config tensorflow to prevent out of memory when training
@@ -80,28 +100,42 @@ train_label_set = ["label_data_0313.json",
 test_dataset_path = "/home/dana/Datasets/ML/TuSimple/test_set"
 test_label_set = ["test_label.json"]
 
-dataset = TusimpleLane(train_dataset_path, train_label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count)
+full_dataset_path = "/home/dana/Datasets/ML/TuSimple/full_set"
+full_label_set = ["label_data_0313.json",
+                  "label_data_0531.json",
+                  "label_data_0601.json",
+                  "test_label.json"]
+another_dataset_path = "/home/dana/Datasets/ML/TuSimple/another_test"
+another_label_set = ["test.json"]
+
+# dataset = TusimpleLane(train_dataset_path, train_label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count)
 # dataset = TusimpleLane(test_dataset_path, test_label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count)
+dataset = TusimpleLane(full_dataset_path, full_label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count)
+# dataset = TusimpleLane(another_dataset_path, another_label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count)
 
 # titanic_batches = dataset.batch(2).repeat(1)
 # titanic_batches = dataset.prefetch(tf.data.experimental.AUTOTUNE).batch(200)
 # titanic_batches = dataset.interleave(lambda parameter_list: dataset,
 #                                      cycle_length=100,
 #                                     block_length=1)
-titanic_batches = dataset.batch(4).shuffle(5000)
+# titanic_batches = dataset.batch(4).shuffle(100)
+titanic_batches = dataset.batch(1)
 
+ii = 0
 for elem in titanic_batches:
+    ii+=1
     print(tf.shape(elem[0]))
     print(tf.shape(elem[1]))
     # tf.print(elem[1], summarize=-1)
-    print("-------------------------------------------------------")
+    # print("-------------------------------------------------------")
     break
-    # asdasd
 
 model = LaneModel(net_input_img_size, x_anchors, y_anchors, max_lane_count)
 model.create()
 model.load_weight()
+# model.save()
 # model.train(titanic_batches)
 model.evaluate(titanic_batches)
 
 
+# 
