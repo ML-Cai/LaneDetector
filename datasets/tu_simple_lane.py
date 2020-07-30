@@ -116,8 +116,8 @@ class TusimpleLane(tf.data.Dataset):
                     continue
                 yIdx = int((dy * inv_h) * y_anchors)
 
-                if (dy * inv_h) < 0.45:
-                    continue
+                # if (dy * inv_h) < 0.45:
+                #     continue
 
                 if (yIdx >= 0 and yIdx < y_anchors and xIdx >=0 and xIdx < x_anchors):
                     label[laneIdx][yIdx][xIdx] = 1
@@ -132,10 +132,12 @@ class TusimpleLane(tf.data.Dataset):
                     xIdx = x_anchors -1
                     label[laneIdx][yIdx][xIdx] = 1
                 
-            # np.set_printoptions(threshold=sys.maxsize)
-            # print(label[laneIdx])
-            # print("-------------------------------------------------------")
-            
+        # result_label = np.zeros((y_anchors, x_anchors, max_lane_count), dtype=np.int8)
+        # for yIdx in range(y_anchors):
+        #     for xIdx in range(x_anchors):
+        #         for laneIdx in range(max_lane_count):
+        #             result_label[yIdx][xIdx][laneIdx] = label[laneIdx][yIdx][xIdx]
+
         return [imgf, label]
             
     # ----------------------------------------------------------------------------------------
@@ -158,7 +160,7 @@ class TusimpleLane(tf.data.Dataset):
                 label_lanes = raw_label["lanes"]
                 label_h_samples = raw_label["h_samples"]
 
-                # if (count >=30):
+                # if (count >=1):
                 #     break
                 # count += 1
                 

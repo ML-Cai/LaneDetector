@@ -7,75 +7,25 @@ import tensorflow_datasets.public_api as tfds
 import numpy as np
 from datasets import TusimpleLane
 from models import LaneModel
+from losses import LaneLoss
 
-physical_devices = tf.config.experimental.list_physical_devices('GPU')
-assert len(physical_devices) > 0, "Not enough GPU hardware devices available"
-config = tf.config.experimental.set_memory_growth(physical_devices[0], True)
+y_true = [[10.0, 10.0, 10.0, 10.0],
+          [10.0, 0.1, 0.1, 0.1],
+          [10.0, 0.1, 0.1, 0.1],
+          [10.0, 0.1, 0.1, 0.1]]
+# Using 'auto'/'sum_over_batch_size' reduction type.
 
-y_pred = np.array ([[
-          [
-           [0.0, 0.0, 0.0, 1.0],
-           [0.0, 0.0, 1.0, 0.0],
-           [0.0, 1.0, 0.0, 0.0],
-           [1.0, 0.0, 0.0, 0.0]
-          ],
-          [
-           [1.0, 0.0, 0.0, 0.0],
-           [0.0, 0.0, 1.0, 0.0],
-           [0.0, 1.0, 0.0, 0.0],
-           [0.0, 0.0, 0.0, 1.0]
-          ],
-        ] ])
-        
-print("y_pred.shape ", y_pred.shape)
-
-
-
-# batch, lane_count, y_anchors, x_anchors = y_pred.shape
-# loss_all = []
-# for i in range(0, y_anchors-1):
-#     print(y_pred[:,:,i,:])
-#     print(" ")
-#     print(y_pred[:,:,i+1,:])
-
-#     HUBER_DELTA = 0.5
-#     x  = tf.keras.backend.l2_normalize(y_pred[:,:,i,:])
-#     tf.print(y_pred[:,:,i,:] + y_pred[:,:,i+1,:])
-#     print("-------------------")
-#     loss_all.append(y_pred[:,:,i,:] - y_pred[:,:,i+1,:])
-
+# foo = tf.constant(y_true, dtype = tf.float32)
+# tf.print(tf.shape(foo))
+# print("-1-----------------------------------------------")
+# print(tf.keras.layers.Softmax()(foo).numpy())
+# print("0-----------------------------------------------")
+# print(tf.keras.layers.Softmax(axis=0)(foo).numpy())
+# print("1-----------------------------------------------")
+# print(tf.keras.layers.Softmax(axis=1)(foo).numpy())
 # sys.exit(0)
 
-
-
-
-# x_in = np.zeros((1, 224, 224, 3), dtype=np.int8)
-# y_out = np.zeros((1, 1000), dtype=np.int8)
-# model = tf.keras.applications.MobileNetV2()
-# model.summary()
-
-# result = model.predict(x_in)
-# start = time.time()
-# for i in range(1000):
-#     result = model.predict(x_in)
-# end = time.time()
-# print("round ", i , " , cost : ", (end - start) / 1000.0, "s")
-# sadasd
-
-
-
-# y_true = [[[0, 0, 1, 0],
-#            [0, 1, 0, 0]],
-#           [[0, 1, 0, 0],
-#            [0, 1, 0, 0]]]
-# y_pred = [[[0.05, 0.95, 0, 0.01],
-#            [0.1, 0.8, 0.1, 0.1]],
-#           [[0.05, 0.95, 0, 0.01],
-#            [0.1, 0.8, 0.1, 0.1]]]
-# # Using 'auto'/'sum_over_batch_size' reduction type.
-# cce = tf.keras.losses.CategoricalCrossentropy()
-
-# m = tf.keras.metrics.CategoricalAccuracy()
+# cce = LaneLoss
 # m.update_state(y_true, y_pred)
 # print("crossentropy ", cce(y_true, y_pred).numpy())
 # print("accuracy ", m.result().numpy())
@@ -118,8 +68,8 @@ dataset = TusimpleLane(full_dataset_path, full_label_set, net_input_img_size, x_
 # titanic_batches = dataset.interleave(lambda parameter_list: dataset,
 #                                      cycle_length=100,
 #                                     block_length=1)
-# titanic_batches = dataset.batch(4).shuffle(100)
-titanic_batches = dataset.batch(1)
+titanic_batches = dataset.batch(4).shuffle(100)
+# titanic_batches = dataset.batch(1)
 
 ii = 0
 for elem in titanic_batches:
@@ -129,13 +79,10 @@ for elem in titanic_batches:
     # tf.print(elem[1], summarize=-1)
     # print("-------------------------------------------------------")
     break
-
+  
 model = LaneModel(net_input_img_size, x_anchors, y_anchors, max_lane_count)
 model.create()
 model.load_weight()
-# model.save()
-# model.train(titanic_batches)
+# model.save() 
+model.train(titanic_batches)
 model.evaluate(titanic_batches)
-
-
-# 
