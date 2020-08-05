@@ -7,8 +7,6 @@ class MobilenetV2IdentityBlock(tf.keras.Model):
         super(MobilenetV2IdentityBlock, self).__init__(name=name)
         filters_in, filter_out = filters
 
-        self.conv_shortcut = tf.keras.layers.Conv2D(filter_out, kernel_size=(1,1), padding='same')
-
         self.conv_a = tf.keras.layers.Conv2D(filters_in, kernel_size=(1,1), padding='same')
         self.bn_a = tf.keras.layers.BatchNormalization()
         
@@ -20,17 +18,18 @@ class MobilenetV2IdentityBlock(tf.keras.Model):
 
     def call(self, input_tensor, training=False):
         x = input_tensor
-        sc = self.conv_shortcut(x)
+        sc = x
 
         # expand
         x = self.conv_a(x)
         x = self.bn_a(x, training=training)
-        x = tf.nn.relu(x)
+        x = tf.keras.layers.ReLU()(x)
         
 
         # depthwise
         x = self.depthwise_b(x)
         x = self.depthwise_bn_b(x, training=training)
+        x = tf.keras.layers.ReLU()(x)
                 
         # project
         x = self.conv_c(x) 

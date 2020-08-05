@@ -1,3 +1,3 @@
-from .lane_model import LaneModel
+from .lane_model import AlphaLaneModel
 from .resnet_identity_block import ResnetIdentityBlock
 from .mobilenet_v2_block import MobilenetV2IdentityBlock

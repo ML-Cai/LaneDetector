@@ -55,9 +55,9 @@ def LaneLoss(coeff = 1.0):
         class_loss = categoricalCrossentropy(y_true, y_pred)
         # tf.print("ret ", ret)
 
-        # loss = class_loss + continue_loss * 0.01
-        loss = class_loss + continue_loss * 0.1
-        # loss = class_loss 
+        # loss = class_loss + continue_loss * 0.0001
+        # loss = class_loss + continue_loss * 0.1
+        loss = class_loss 
         return loss
 
     return _loss

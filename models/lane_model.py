@@ -10,331 +10,230 @@ from losses.lane_loss import LaneLoss
 from PIL import Image
 import cv2
 
+# ---------------------------------------------------
+class SqueezeAndExcitiationBlock(tf.keras.Model):
+    def __init__(self, dim,  name=''):
+        super(SqueezeAndExcitiationBlock, self).__init__(name=name)
+        H, W, C = dim
 
-class LaneModel():
-    def __init__(self, net_input_img_size, x_anchors, y_anchors, max_lane_count):
-        self.net_input_img_size = net_input_img_size
-        self.x_anchors = x_anchors
-        self.y_anchors = y_anchors
-        self.max_lane_count = max_lane_count
+        self.global_pool = keras.layers.MaxPool2D(pool_size=(H, W))
+        self.dense_A     = keras.layers.Dense(units=C / 2)
+        self.relu_A      = keras.layers.ReLU()
+        self.dense_B     = keras.layers.Dense(units=C)
+        self.reshape     = keras.layers.Reshape((1, 1, C))
+    
+    def call(self, x, training=False):
+        x_in = x
+        x = self.global_pool(x)
+        x = self.dense_A(x)
+        x = self.relu_A(x)
+        x = self.dense_B(x)
+        x = tf.nn.sigmoid(x)
+        x = self.reshape(x)
+        x = x_in * x
+        
+        return x
 
+# ---------------------------------------------------
+class FeatureDownsamplingBlock(tf.keras.Model):
+    def __init__(self, filters, kernel_size=(3, 3), pool_size=(1, 1), padding='same', name=''):
+        super(FeatureDownsamplingBlock, self).__init__(name=name)
 
-    def _downsample_block(self, inputs, nb_filters, name=''):
-        x = keras.layers.Conv2D(nb_filters, (3, 3), padding='same', name=name+'_conv')(inputs)
-        x = keras.layers.BatchNormalization(name=name+'_bn')(x)
-        x = keras.activations.relu(x)
-        x = keras.layers.MaxPool2D(pool_size=(2, 2), name=name+'_maxpool')(x)
+        self.conv = keras.layers.Conv2D(filters, kernel_size=kernel_size, padding=padding, strides=pool_size)
+        self.bn = keras.layers.BatchNormalization()
+        self.relu = keras.layers.ReLU()
+        # self.pool = keras.layers.MaxPool2D(pool_size=pool_size)
+        self.se = None
+    
+    def call(self, x, training=False):
+        x = self.conv(x)
+        x = self.bn(x, training= training)
+        x = self.relu(x)
+        # x = self.pool(x)
+
+        # ---------------------------------
+        # if self.se is None:
+        #     H, W, C = x.shape.as_list()[1:]
+        #     self.se = SqueezeAndExcitiationBlock(dim=(H, W, C))
+        
+        # x = self.se(x)
+        # ---------------------------------
 
         return x
 
+# ---------------------------------------------------
+class FeatureUpsamplingBlock(tf.keras.Model):
+    def __init__(self, filters, kernel_size=(3, 3), strides=(1, 1), padding='same', name='', activation=True):
+        super(FeatureUpsamplingBlock, self).__init__(name=name)
 
-    def _dense_block6(self, inputs, nb_filters, name=''):
-        x = keras.layers.Conv2D(nb_filters, (3, 3), padding='same', name=name+'_conv1')(inputs)
-        x = keras.layers.BatchNormalization(name=name+'_bn1')(x)
-        x = keras.activations.relu(x)
-        con_1 = keras.layers.concatenate([x, inputs], name=name+'con_1')
-         
-        x = con_1
-        x = keras.layers.Conv2D(nb_filters, (3, 3), padding='same', name=name+'_conv2')(x)
-        x = keras.layers.BatchNormalization(name=name+'_bn2')(x)
-        x = keras.activations.relu(x)
-        con_2 = keras.layers.concatenate([x, con_1], name=name+'con_2')
-     
-
-        x = con_2
-        x = keras.layers.Conv2D(nb_filters, (3, 3), padding='same', name=name+'_conv3')(x)
-        x = keras.layers.BatchNormalization(name=name+'_bn3')(x)
-        x = keras.activations.relu(x)
-        con_3 = keras.layers.concatenate([x, con_2], name=name+'con_3')
-     
-        x = con_3
-        x = keras.layers.Conv2D(nb_filters, (3, 3), padding='same', name=name+'_conv4')(x)
-        x = keras.layers.BatchNormalization(name=name+'_bn4')(x)
-        x = keras.activations.relu(x)
-        con_4 = keras.layers.concatenate([x, con_3], name=name+'con_4')
+        self.conv = keras.layers.Conv2DTranspose(filters, kernel_size=kernel_size, strides=strides, padding=padding)
+        self.bn = keras.layers.BatchNormalization()
+        if activation:
+            self.activeation = keras.layers.ReLU()
+        else:
+            self.activeation = None
+        self.se = None
     
+    def call(self, x, training=False):
+        x = self.conv(x)
+        x = self.bn(x, training= training)
 
-        x = con_4
-        x = keras.layers.Conv2D(nb_filters, (3, 3), padding='same', name=name+'_conv5')(x)
-        x = keras.layers.BatchNormalization(name=name+'_bn5')(x)
-        x = keras.activations.relu(x)
-        con_5 = keras.layers.concatenate([x, con_4], name=name+'con_5')
+        if not (self.activeation is None):
+            x = self.activeation(x)
+
+        # ---------------------------------
+        # if self.se is None:
+        #     H, W, C = x.shape.as_list()[1:]
+        #     self.se = SqueezeAndExcitiationBlock(dim=(H, W, C))
+        
+        # x = self.se(x)
+        # ---------------------------------
+
+        return x
+
+# ---------------------------------------------------
+class DensenetBlock(tf.keras.Model):
+    def __init__(self, filters, connect_count, name=''):
+        super(DensenetBlock, self).__init__(name=name)
+
+        self.se_list = []
+        self.conv_list = []
+        self.bn_list = []
+        self.relu_list = []
+        self.concate_list = []
+        for ci in range(connect_count):
+            self.conv_list.append(keras.layers.Conv2D(filters, (3, 3), padding='same'))
+            self.bn_list.append(keras.layers.BatchNormalization())
+            self.relu_list.append(keras.layers.ReLU())
+            self.concate_list.append(keras.layers.Concatenate())
+            self.se_list.append(None)
+        
+        self.connect_count = connect_count
+
+    def call(self, x, training=False):
+        
+        for ci in range(self.connect_count):
+            inputs = x
+            x = self.conv_list[ci](x)
+            x = self.bn_list[ci](x)
+            x = self.relu_list[ci](x)
+
+            # -------------------------------------------
+            # se
+            
+            # if self.se_list[ci] is None:
+            #     H, W, C = x.shape.as_list()[1:]
+            #     self.se_list[ci] = SqueezeAndExcitiationBlock(dim=(H, W, C))
+            
+            # x = self.se_list[ci](x)
+        
+            # -------------------------------------------
+            x = self.concate_list[ci]([x, inputs])
+        
+        return x
+
+
+
+def AlphaLaneModel(net_input_img_size, x_anchors, y_anchors, max_lane_count, name=''):
+    # input = keras.Input(shape=(net_input_img_size[1], net_input_img_size[0], 3))
+    # x = input
+    # x = FeatureDownsamplingBlock(10, kernel_size=(3, 3), pool_size=(2, 2), padding='same', name='FeatureDownsamplingBlock_1')(x)
+    # x = FeatureDownsamplingBlock(20, kernel_size=(3, 3), pool_size=(2, 2), padding='same', name='FeatureDownsamplingBlock_2')(x)
+    # x = FeatureDownsamplingBlock(30, kernel_size=(3, 3), pool_size=(2, 2), padding='same', name='FeatureDownsamplingBlock_3')(x)
+
+    # # dense
+    # x = MobilenetV2IdentityBlock(kernel_size=(3, 3), filters=(30*6, 30))(x)
+    # x = MobilenetV2IdentityBlock(kernel_size=(3, 3), filters=(30*6, 30))(x)
+    # x_denseA = x
+
+    # ## down
+    # x = FeatureDownsamplingBlock(64, kernel_size=(3, 3), pool_size=(2, 2), padding='same', name='FeatureDownsamplingBlock_5')(x)
+        
+    # # dense
+    # x = MobilenetV2IdentityBlock(kernel_size=(3, 3), filters=(64*6, 64))(x)
+    # x = MobilenetV2IdentityBlock(kernel_size=(3, 3), filters=(64*6, 64))(x)
+    # x = MobilenetV2IdentityBlock(kernel_size=(3, 3), filters=(64*6, 64))(x)
+        
+    # # upsampling A
+    # x = FeatureUpsamplingBlock(64, kernel_size=(3, 3), padding='same', strides=(2, 2), name='FeatureDownsamplingBlock_7')(x)
+    # x = MobilenetV2IdentityBlock(kernel_size=(3, 3), filters=(64*6, 64))(x)
+    # x = MobilenetV2IdentityBlock(kernel_size=(3, 3), filters=(64*6, 64))(x)
     
-        x = con_5
-        x = keras.layers.Conv2D(nb_filters, (3, 3), padding='same', name=name+'_conv6')(x)
-        x = keras.layers.BatchNormalization(name=name+'_bn6')(x)
-        x = keras.activations.relu(x)
-        con_6 = keras.layers.concatenate([x, con_5], name=name+'con_6')
+    # # concate
+    # x = keras.layers.Concatenate()([x, x_denseA])
 
-        out = con_6
+    # # upsampling B
+    # x = FeatureUpsamplingBlock(max_lane_count, kernel_size=(3, 3), padding='same', strides=(2, 2), activation=False, name='FeatureDownsamplingBlock_9')(x)
+    # x = keras.layers.Softmax(axis=2)(x)
 
-        return out
+    # # cvt 72 128 4 --> 4 72 128
+    # output = keras.backend.permute_dimensions(x, (0, 3, 1, 2))  # transpose
 
-  
-
-    def create(self):
-        print("-------------------------------------------------------------------")
-        print("create_model")
-
-        input = keras.Input(shape=(self.net_input_img_size[1], self.net_input_img_size[0], 3))
-        x = input
-
-        # res block 1
-        x = self._downsample_block(x, 10, name='feature_block_A')
-        x = self._downsample_block(x, 20, name='feature_block_B')
-        x = self._downsample_block(x, 30, name='feature_block_C')
-        
-        # dense
-        x = self._dense_block6(x, 32, name='dense_block_A')
-        x_denseA = x
-
-        ###################
-        ## down
-        x = keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same')(x)
-        x = keras.layers.BatchNormalization()(x)
-        x = keras.activations.relu(x)
-        x = keras.layers.MaxPool2D(pool_size=(2, 2))(x)
-
-        # # dense
-        x = self._dense_block6(x, 32, name='dense_block_B')
-        
-        # # upsampling
-        x = keras.layers.Conv2DTranspose(64, kernel_size=(3, 3), padding='same', strides=(2, 2))(x)
-        x = keras.layers.BatchNormalization()(x)
-        x = keras.activations.relu(x)
-
-        x = keras.layers.concatenate([x, x_denseA])
-        ###################3
-
-        # # upsampling
-        # 
-        x = keras.layers.Conv2DTranspose(128, kernel_size=(3, 3), padding='same', strides=(2, 2))(x)
-        x = keras.layers.BatchNormalization()(x)
-        x = keras.activations.relu(x)
-
-        x = keras.layers.Conv2D(4, kernel_size= (3, 3), padding='same')(x)
-        x = keras.layers.BatchNormalization()(x)
-        x = keras.layers.Softmax(axis=2)(x)
-
-        # 72 128 4 --> 4 72 128
-        x = keras.backend.permute_dimensions(x, (0, 3, 1, 2))  # transpose
+    # return keras.Model(input, output, name="test")
 
 
-        # 
-
-        # x = keras.layers.Softmax()(x)
-
-        # x = keras.layers.Flatten()(x)
-        # x = keras.layers.Reshape((self.max_lane_count, self.y_anchors, self.x_anchors))(x)
-        # x = keras.layers.Conv2D(128, kernel_size=(3, 3), padding='same')(x)
-        # x = keras.layers.BatchNormalization()(x)
-        # x = keras.activations.relu(x)
-
-        # # transition
-        # height, width, in_channels = x.shape.as_list()[1:]
-        # shape_size = height * width * in_channels
-        # x = keras.backend.reshape(x, [-1, self.max_lane_count, self.y_anchors, int((shape_size / self.max_lane_count) / self.y_anchors)])
-
-        # # dense
-        # x = self._dense_block6(x, 32, name='dense_block_C')
-
-        # x = keras.layers.Conv2D(128, kernel_size=(1, 1), padding='same')(x)
-        # x = keras.layers.BatchNormalization()(x)
-
-        
-        # x = tf.keras.activations.softmax(x)
-        output = x
-
-        model = keras.Model(input, output, name="test")
-        loss = LaneLoss()
-        optimizer = keras.optimizers.Adam(lr=0.0001)
-        model.compile(optimizer=optimizer,
-                      loss=loss,
-                      metrics=[tf.keras.metrics.CategoricalAccuracy()])
-        model.summary()
-        # keras.utils.plot_model(model, "my_first_model.png")
-       
-        self.model = model
-
-    # -------------------------------------------------------------------
-    def train(self, dataset, train_epochs = 200):
-        print("-------------------------------------------------------------------")
-        print("train_model")
-
-        checkpoint_path = "/home/dana/tmp/ccp-{epoch:04d}.ckpt"
-        cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path, 
-                                                        verbose=1, 
-                                                        save_weights_only=True,
-                                                        period=2)
-        log_dir = "/home/dana/tmp/logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir,
-                                                              histogram_freq=1,
-                                                            #   profile_batch = '100,200'
-                                                              )
-        # ---------------------------
-        # recover point
-        history = self.model.fit(dataset,
-                                 callbacks=[cp_callback, tensorboard_callback],
-                                 epochs = train_epochs)
-
-        return history
-
-    # -------------------------------------------------------------------
-    def evaluate(self, dataset):
-        print("-------------------------------------------------------------------")
-        print("evaluate_model")
-        test_loss, test_acc = self.model.evaluate(dataset, verbose=2)
-
-        print('evaluate loss:', test_loss)
-        print('evaluate accuracy:', test_acc)
-
-        # for elem in dataset:
-        #     test_loss, test_acc =  self.model.test_on_batch (x=elem[0], y=elem[1])
-        #     print('loss: %s, accuracy %s', test_loss, test_acc)
-        #     # asdasd
-        
-
-        idx = 0
-        for elem in dataset:
-            test_loss, test_acc =  self.model.test_on_batch (x=elem[0], y=elem[1])
-            print('[%d] loss: %s, accuracy %s', idx, test_loss, test_acc)
-
-            prediction = self.model.predict(x=elem[0])
-            main_img = np.uint8(elem[0] * 255)
-            main_img = cv2.cvtColor(main_img[0], cv2.COLOR_BGR2GRAY)
-            main_img = cv2.cvtColor(main_img, cv2.COLOR_GRAY2BGR)
-            
-            zeros = np.zeros((self.y_anchors,  self.x_anchors), dtype=np.uint8)
-            raw_output= []
-            for si in range(self.max_lane_count):
-                output_int8 = np.uint8(prediction[0][si] * 255)
-                if si == 0:
-                    img = cv2.merge([zeros, zeros, output_int8])
-                elif si ==1:
-                    img = cv2.merge([zeros, output_int8, zeros])
-                elif si ==2:
-                    img = cv2.merge([output_int8, zeros, zeros])
-                elif si ==3:
-                    img = cv2.merge([zeros, output_int8, output_int8])
-                else:
-                    img = cv2.merge([output_int8, zeros, output_int8])
-
-                img = cv2.resize(img, (512, 288))
-                main_img = main_img + img
-                # main_img = img
-            
-            prefix = 'build/' + str(idx)
-            
-            cv2.imwrite(prefix + "_aaw.png", main_img)
-            idx += 1
-            if (idx >=20):
-                break;
-            
-
-            # self.max_lane_count, self.y_anchors,
-            
-            # img0 = Image.fromarray(raw_output[0] , 'RGB')
-            # img1 = Image.fromarray(raw_output[1] , 'RGB')
-            # img2 = Image.fromarray(raw_output[2] , 'RGB')
-            # img3 = Image.fromarray(raw_output[3] , 'RGB')
-            # img01 = Image.blend(img0, img1, 0.5)
-            # img23 = Image.blend(img2, img3, 0.5)
-            # img = Image.blend(img01, img23, 0.5)
-            # img.save(prefix + "_aa.png")
-            
-            # img = Image.fromarray(np.uint8(prediction[0][0] * 255) , 'L')
-            # img.save(prefix + "_aa0.png")
-            # img = Image.fromarray(np.uint8(prediction[0][1] * 255) , 'L')
-            # img.save(prefix + "_aa1.png")
-            # img = Image.fromarray(np.uint8(prediction[0][2] * 255) , 'L')
-            # img.save(prefix + "_aa2.png")
-            # img = Image.fromarray(np.uint8(prediction[0][3] * 255) , 'L')
-            # img.save(prefix + "_aa3.png")
-        
-        # for idx in range(min(5, len(prediction))):
-        #     print("save ", idx)
-        #     prefix = str(idx)
-        #     img0 = Image.fromarray(np.uint8(prediction[idx][0] * 255) , 'L')
-        #     img1 = Image.fromarray(np.uint8(prediction[idx][1] * 255) , 'L')
-        #     img2 = Image.fromarray(np.uint8(prediction[idx][2] * 255) , 'L')
-        #     img3 = Image.fromarray(np.uint8(prediction[idx][3] * 255) , 'L')
-        #     img01 = Image.blend(img0, img1, 0.5)
-        #     img23 = Image.blend(img2, img3, 0.5)
-        #     img = Image.blend(img01, img23, 0.5)
-        #     img.save(prefix + "_aa.png")
-        
 
 
-  
-        # -------------------------------------
-        # time test 
-        mm = keras.applications.MobileNetV2()
-        # mm.summary()
-        x_in = np.zeros((1, 224, 224, 3), dtype=np.int8)
-        result =mm.predict(x_in)
-        start = time.time()
-        for i in range(300):
-            result = mm.predict(x_in)
-        end = time.time()
-        print("predict mobilenet ", i , " , cost : ", (end - start) / 300.0, "s")
+    input = keras.Input(shape=(net_input_img_size[1], net_input_img_size[0], 3))
+    x = input
+    x = FeatureDownsamplingBlock(10, kernel_size=(3, 3), pool_size=(2, 2), padding='same', name='FeatureDownsamplingBlock_1')(x)
+    x = FeatureDownsamplingBlock(20, kernel_size=(3, 3), pool_size=(2, 2), padding='same', name='FeatureDownsamplingBlock_2')(x)
+    x_feature2 = x
+
+    x = FeatureDownsamplingBlock(30, kernel_size=(3, 3), pool_size=(2, 2), padding='same', name='FeatureDownsamplingBlock_3')(x)
+
+    # dense
+    x = DensenetBlock(filters=20, connect_count=4, name='DensenetBlock_4')(x)
+
+    # se
+    H, W, C = x.shape.as_list()[1:]
+    x = SqueezeAndExcitiationBlock(dim=(H, W, C))(x)
+    x_denseA = x
+
+    ## down
+    x = FeatureDownsamplingBlock(128, kernel_size=(3, 3), pool_size=(2, 2), padding='same', name='FeatureDownsamplingBlock_5')(x)
+
+    # se
+    H, W, C = x.shape.as_list()[1:]
+    x = SqueezeAndExcitiationBlock(dim=(H, W, C))(x)
+
+    # dense
+    x = DensenetBlock(filters=20, connect_count=6, name='DensenetBlock_6')(x)
+
+    # se
+    H, W, C = x.shape.as_list()[1:]
+    x = SqueezeAndExcitiationBlock(dim=(H, W, C))(x)
+
+    # upsampling A
+    x = FeatureUpsamplingBlock(128, kernel_size=(3, 3), padding='same', strides=(2, 2), name='FeatureDownsamplingBlock_7')(x)
+
+    # se
+    H, W, C = x.shape.as_list()[1:]
+    x = SqueezeAndExcitiationBlock(dim=(H, W, C))(x)
+
+    # concate
+    x = keras.layers.Concatenate()([x, x_denseA])
+
+    # upsampling B
+    # x = FeatureUpsamplingBlock(max_lane_count, kernel_size=(3, 3), padding='same', strides=(2, 2), activation=False, name='FeatureDownsamplingBlock_9')(x)
+    # x = keras.layers.Softmax(axis=2)(x)
+
+    x = FeatureUpsamplingBlock(32, kernel_size=(3, 3), padding='same', strides=(2, 2), name='FeatureDownsamplingBlock_9')(x)
+    x = keras.layers.Concatenate()([x, x_feature2])
+    x = keras.layers.Conv2D(max_lane_count, kernel_size=(1, 1), padding='same')(x)
+
+    x = keras.layers.Softmax(axis=2)(x)
+
+    # cvt 72 128 4 --> 4 72 128
+    output = keras.backend.permute_dimensions(x, (0, 3, 1, 2))  # transpose
+
+    return keras.Model(input, output, name="test")
 
 
-        x_in = np.zeros((1, 288, 512, 3), dtype=np.int8)
-        result = self.model.predict(x_in)
-        start = time.time()
-        for i in range(300):
-            result = self.model.predict(x_in)
-        end = time.time()
-        print("predict lanenet ", i , " , cost : ", (end - start) / 300.0, "s")
 
 
-        x_in = np.zeros((1, 224, 224, 3), dtype=np.int8)
-        result =mm.predict_on_batch(x_in)
-        start = time.time()
-        for i in range(300):
-            result = mm.predict_on_batch(x_in)
-        end = time.time()
-        print("predict_on_batch mobilenet ", i , " , cost : ", (end - start) / 300.0, "s")
 
 
-        x_in = np.zeros((1, 288, 512, 3), dtype=np.int8)
-        result = self.model.predict_on_batch(x_in)
-        start = time.time()
-        for i in range(300):
-            result = self.model.predict_on_batch(x_in)
-        end = time.time()
-        print("predict_on_batch lanenet ", i , " , cost : ", (end - start) / 300.0, "s")
 
 
-        x_in = np.zeros((1, 224, 224, 3), dtype=np.int8)
-        result =  mm(x_in)
-        start = time.time()
-        for i in range(300):
-            result = mm(x_in)
-        end = time.time()
-        print("mobilenet ", i , " , cost : ", (end - start) / 300.0, "s")
 
-
-        x_in = np.zeros((1, 288, 512, 3), dtype=np.int8)
-        result =  self.model(x_in)
-        start = time.time()
-        for i in range(300):
-            result = self.model(x_in)
-        end = time.time()
-        print("lanenet ", i , " , cost : ", (end - start) / 300.0, "s")
-
-
-    # -------------------------------------------------------------------
-    def load_weight(self):
-        print("-------------------------------------------------------------------")
-        print("load_model")
-
-        checkpoint_path = "/home/dana/tmp/"
-        self.model.load_weights(tf.train.latest_checkpoint(checkpoint_path))
-
-    # -------------------------------------------------------------------
-    def save(self):
-        print("-------------------------------------------------------------------")
-        print("save_model")
-        self.model.save('model.h5', save_format='h5')
-        
