@@ -16,7 +16,8 @@ class SqueezeAndExcitiationBlock(tf.keras.Model):
         super(SqueezeAndExcitiationBlock, self).__init__(name=name)
         H, W, C = dim
 
-        self.global_pool = keras.layers.MaxPool2D(pool_size=(H, W))
+        # self.global_pool = keras.layers.MaxPool2D(pool_size=(H, W))
+        self.global_pool = keras.layers.AveragePooling2D(pool_size=(H, W)) 
         self.dense_A     = keras.layers.Dense(units=C / 2)
         self.relu_A      = keras.layers.ReLU()
         self.dense_B     = keras.layers.Dense(units=C)
@@ -198,7 +199,7 @@ def AlphaLaneModel(net_input_img_size, x_anchors, y_anchors, max_lane_count, nam
     x = SqueezeAndExcitiationBlock(dim=(H, W, C))(x)
 
     # dense
-    x = DensenetBlock(filters=20, connect_count=6, name='DensenetBlock_6')(x)
+    x = DensenetBlock(filters=20, connect_count=8, name='DensenetBlock_6')(x)
 
     # se
     H, W, C = x.shape.as_list()[1:]
@@ -207,25 +208,34 @@ def AlphaLaneModel(net_input_img_size, x_anchors, y_anchors, max_lane_count, nam
     # upsampling A
     x = FeatureUpsamplingBlock(128, kernel_size=(3, 3), padding='same', strides=(2, 2), name='FeatureDownsamplingBlock_7')(x)
 
+    # concate
+    x = keras.layers.Concatenate()([x, x_denseA])
+
     # se
     H, W, C = x.shape.as_list()[1:]
     x = SqueezeAndExcitiationBlock(dim=(H, W, C))(x)
 
-    # concate
-    x = keras.layers.Concatenate()([x, x_denseA])
-
     # upsampling B
-    # x = FeatureUpsamplingBlock(max_lane_count, kernel_size=(3, 3), padding='same', strides=(2, 2), activation=False, name='FeatureDownsamplingBlock_9')(x)
-    # x = keras.layers.Softmax(axis=2)(x)
-
-    x = FeatureUpsamplingBlock(32, kernel_size=(3, 3), padding='same', strides=(2, 2), name='FeatureDownsamplingBlock_9')(x)
-    x = keras.layers.Concatenate()([x, x_feature2])
-    x = keras.layers.Conv2D(max_lane_count, kernel_size=(1, 1), padding='same')(x)
-
+    x = FeatureUpsamplingBlock(max_lane_count, kernel_size=(5, 5), padding='same', strides=(2, 2), activation=False, name='FeatureDownsamplingBlock_9')(x)
     x = keras.layers.Softmax(axis=2)(x)
+    x = keras.backend.permute_dimensions(x, (0, 3, 1, 2))  # cvt 72 128 4 --> 4 72 128
+    output = x
 
-    # cvt 72 128 4 --> 4 72 128
-    output = keras.backend.permute_dimensions(x, (0, 3, 1, 2))  # transpose
+    # x = FeatureUpsamplingBlock(32, kernel_size=(3, 3), padding='same', strides=(2, 2), name='FeatureDownsamplingBlock_9')(x)
+    # x = keras.layers.Concatenate()([x, x_feature2])
+    # x = keras.layers.Conv2D(max_lane_count, kernel_size=(1, 1), padding='same')(x)
+    # x = keras.layers.Softmax(axis=2)(x)
+    # x = keras.backend.permute_dimensions(x, (0, 3, 1, 2))  # cvt 72 128 4 --> 4 72 128
+    # output = x
+
+    # H, W, C = x.shape.as_list()[1:]
+    # x = keras.layers.AveragePooling2D(pool_size=(H, W))(x)
+    # x = keras.layers.Dense(128)(x)
+    # x = keras.layers.BatchNormalization()(x)
+    # x = keras.layers.Dense(x_anchors* y_anchors* max_lane_count)(x)
+    # x = keras.layers.Reshape((max_lane_count, y_anchors, x_anchors))(x)
+    # x = keras.layers.Softmax()(x)
+    # output = x
 
     return keras.Model(input, output, name="test")
 

@@ -8,7 +8,7 @@ import tensorflow_datasets.public_api as tfds
 import numpy as np
 import datetime
 import cv2
-from datasets import TusimpleLane
+import datasets
 from models import AlphaLaneModel
 from losses import LaneLoss
 
@@ -55,7 +55,7 @@ def train(model, train_dataset, valid_batches, checkpoint_path, train_epochs=200
                         callbacks=[cp_callback, tensorboard_callback],
                         epochs = train_epochs,
                         validation_data=valid_batches,
-                        validation_freq=10)
+                        validation_freq=5)
     
     return history
 
@@ -82,7 +82,6 @@ def image_test(model, dataset, net_input_img_size, x_anchors, y_anchors, max_lan
     for elem in dataset:
         # test_loss, test_acc =  model.test_on_batch (x=elem[0], y=elem[1])
         # print('test image [%d] loss: %s, accuracy %s', idx, test_loss, test_acc)
-        print('test image', idx)
         prediction = model.predict(x=elem[0])
         main_img = np.uint8(elem[0] * 255)
         main_img = cv2.cvtColor(main_img[0], cv2.COLOR_BGR2GRAY)
@@ -114,8 +113,6 @@ def image_test(model, dataset, net_input_img_size, x_anchors, y_anchors, max_lan
         # main_img = main_img + mask
         # main_img = mask
         main_img = cv2.bitwise_or (main_img, mask)
-
-
 
         prefix = 'build/' + str(idx)
         main_img = cv2.resize(main_img, (1280, 720))
@@ -196,34 +193,41 @@ if __name__ == '__main__':
 
     # dataset = TusimpleLane(train_dataset_path, train_label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count)
     # dataset = TusimpleLane(test_dataset_path, test_label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count)
-    dataset = TusimpleLane(full_dataset_path, full_label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count)
+    # dataset = datasets.TusimpleLane(full_dataset_path, full_label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count)
     # dataset = TusimpleLane(another_dataset_path, another_label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count)
 
-    # titanic_batches = dataset.repeat(2).batch(8).shuffle(100)
-    train_batches = dataset.batch(16).shuffle(60)
-    # train_batches = dataset.batch(1)
-    valid_batches = dataset.batch(1)
-
-    for elem in train_batches:
-        print(tf.shape(elem[0]))
-        print(tf.shape(elem[1]))
-        # tf.print(elem[1], summarize=-1)
-        break
+    train_batches = datasets.TusimpleLane(full_dataset_path, full_label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count, False)
+    train_batches = train_batches.batch(8).shuffle(100)
+    # train_batches = train_batches.batch(1)
     
+    valid_batches = datasets.TusimpleLane(test_dataset_path, test_label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count, False)
+    valid_batches = valid_batches.batch(1)
+
+    cc = 0
+    for elem in train_batches:
+        # print('in  : ', tf.shape(elem[0]))
+        # print('out : ', tf.shape(elem[1]))
+        cc+=1
+        break
+        # tf.print(elem[1], summarize=-1)
+    print("sample count ", cc)
+    # sys.exit(1)
+
     flag_training=False
     checkpoint_path = "/home/dana/tmp"
 
     model = AlphaLaneModel(net_input_img_size, x_anchors, y_anchors, max_lane_count)
     model.summary()
     model.load_weights(tf.train.latest_checkpoint(checkpoint_path))
-    model.save('model_result', save_format='tf')
+    
     
     if flag_training:
-        model.compile(optimizer=tf.keras.optimizers.Adam(lr=0.01),
+        model.compile(optimizer=tf.keras.optimizers.Adam(lr=0.001),
                 loss=LaneLoss(),
                 metrics=[tf.keras.metrics.CategoricalAccuracy()])
 
-        train(model, train_batches, valid_batches, checkpoint_path=checkpoint_path, train_epochs=400)
+        train(model, train_batches, valid_batches, checkpoint_path=checkpoint_path, train_epochs=100)
+        # model.save('model_result', save_format='tf')
 
     image_test(model, valid_batches, net_input_img_size, x_anchors, y_anchors, max_lane_count)
 
