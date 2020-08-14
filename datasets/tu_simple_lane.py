@@ -6,10 +6,8 @@ import sys
 import itertools
 import random
 import numpy as np
-import matplotlib.pyplot as plt
 import cv2
 import tensorflow as tf
-import tensorflow_datasets.public_api as tfds
 from PIL import Image
 
 
@@ -184,9 +182,9 @@ class TusimpleLane(tf.data.Dataset):
                 with Image.open(image_path) as image:
                     image_ary = np.asarray(image)
                 
-                # if (count >=30):
-                #     break
-                # count += 1
+                if (count >=30):
+                    break
+                count += 1
 
                 if augmentation:
                     # for brightnessIdx in range(3):

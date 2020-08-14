@@ -1,5 +1,5 @@
 import tensorflow as tf
-import tensorflow.keras as keras
+# import tensorflow.keras as keras
 
 
 class ResnetIdentityBlock(tf.keras.Model):

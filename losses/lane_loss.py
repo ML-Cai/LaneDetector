@@ -1,5 +1,5 @@
 import tensorflow as tf
-import tensorflow.keras as keras
+# import tensorflow.keras as keras
 
 # custom loss test
 def LaneLoss(coeff = 1.0):
@@ -32,16 +32,16 @@ def LaneLoss(coeff = 1.0):
         # tf.print("ori pred_cls ", pred_cls)
 
         continue_scores = wIdxList * pred_cls
-        continue_scores = keras.backend.sum(continue_scores, axis=3)
+        continue_scores = tf.keras.backend.sum(continue_scores, axis=3)
         s0 = tf.slice(continue_scores, [0, 0, 0], [-1, -1, y_anchors -2])
         s1 = tf.slice(continue_scores, [0, 0, 1], [-1, -1, y_anchors -2])
         s2 = tf.slice(continue_scores, [0, 0, 2], [-1, -1, y_anchors -2])
         # tf.print("continue_scores ", continue_scores)
         # tf.print("continue_scores shape ", tf.shape(continue_scores))
 
-        s = keras.backend.abs(s0-s1) - keras.backend.abs(s1-s2)
-        s = keras.backend.sum(s, axis=-1)
-        continue_loss = keras.backend.abs(keras.backend.sum(s, axis=-1))
+        s = tf.keras.backend.abs(s0-s1) - tf.keras.backend.abs(s1-s2)
+        s = tf.keras.backend.sum(s, axis=-1)
+        continue_loss = tf.keras.backend.abs(tf.keras.backend.sum(s, axis=-1))
 
         # tf.print("s0 ", s0)
         # tf.print("s0 shape ", tf.shape(s0))
@@ -55,7 +55,7 @@ def LaneLoss(coeff = 1.0):
         class_loss = categoricalCrossentropy(y_true, y_pred)
         # tf.print("ret ", ret)
 
-        # loss = class_loss + continue_loss * 0.0001
+        # loss = class_loss + continue_loss * 0.001
         # loss = class_loss + continue_loss * 0.1
         loss = class_loss 
         return loss
