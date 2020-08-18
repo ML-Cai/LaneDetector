@@ -1,13 +1,26 @@
 import tensorflow as tf
 # import tensorflow.keras as keras
 
+
+# custom loss test
+def LaneAccuracy(coeff = 1.0):
+    categoricalAccuracy = tf.keras.metrics.CategoricalAccuracy()
+     
+    def _accuracy(y_true, y_pred):
+        y_pred = tf.keras.activations.softmax(y_pred, axis=3)
+
+        return categoricalAccuracy(y_true, y_pred)
+
+    return _accuracy
+
 # custom loss test
 def LaneLoss(coeff = 1.0):
     categoricalCrossentropy = tf.keras.losses.CategoricalCrossentropy()
-    # categoricalCrossentropy = tf.keras.losses.CategoricalCrossentropy(axis=2)
-    
+
     def _loss(y_true, y_pred):
         batch, lane_count, y_anchors, x_anchors = y_pred.get_shape().as_list()
+
+        y_pred = tf.keras.activations.softmax(y_pred, axis=3)
 
 
         # tf.print(y_pred.get_shape())

@@ -182,9 +182,9 @@ class TusimpleLane(tf.data.Dataset):
                 with Image.open(image_path) as image:
                     image_ary = np.asarray(image)
                 
-                if (count >=30):
-                    break
-                count += 1
+                # if (count >=32):
+                #     break
+                # count += 1
 
                 if augmentation:
                     # for brightnessIdx in range(3):
