@@ -22,38 +22,37 @@ class TusimpleLane(tf.data.Dataset):
         gh, gw = ground_size
 
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
-        # # calc homography (TuSimple fake)
-        # imgP = [[501, 362], [781, 357],  [924, 499], [337, 510]]
-        # groundP = [[-180, 1000], [180, 1000],  [180, 300], [-180, 300]]
-        # for i in range(4):
-        #     imgP[i][0] *= w / 1280.0
-        #     imgP[i][1] *= h / 720.0
-        #     groundP[i][0] = groundP[i][0] * 0.16 + gw / 2.0
-        #     groundP[i][1] = gh - groundP[i][1] * 0.1
+        # calc homography (TuSimple fake)
+        imgP = [[501, 362], [781, 357],  [924, 499], [337, 510]]
+        groundP = [[-180, 1300], [180, 1300],  [180, 300], [-180, 300]]
+        for i in range(4):
+            imgP[i][0] *= w / 1280.0
+            imgP[i][1] *= h / 720.0
+            groundP[i][0] = groundP[i][0] * 0.16 + gw / 2.0
+            groundP[i][1] = gh - groundP[i][1] * 0.1
 
-        # print("%f  per pixel" % abs(groundP[0][0] - groundP[1][0]))
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
 
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
         # # calc homography (set_A)
-        # imgP = [[0.3388672, 0.7447917], [0.6171875, 0.75],  [0.6376953, 0.8055556], [0.32128906, 0.8020833]]
-        # groundP = [[-90, 390], [90, 390],  [90, 300], [-90, 300]]
+        # imgP = [[361, 298], [600, 295],  [773, 411], [247, 421]]
+        # groundP = [[-180, 1300], [180, 1300],  [180, 300], [-180, 300]]
         # for i in range(4):
-        #     imgP[i][0] *= 1280.0
-        #     imgP[i][1] *= 720.0
-        #     groundP[i][0] = groundP[i][0] * 0.18 + gw / 2.0
+        #     imgP[i][0] *= 1280.0 / 1024.0
+        #     imgP[i][1] *= 720.0 / 576.0
+        #     groundP[i][0] = groundP[i][0] * 0.16 + gw / 2.0
         #     groundP[i][1] = gh - groundP[i][1] * 0.1
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
 
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
-        # calc homography (set_B)
-        imgP = [[376, 365], [706, 359],  [731, 407], [349, 413]]
-        groundP = [[-90, 190], [90, 190],  [90, 100], [-90, 100]]
-        for i in range(4):
-            imgP[i][0] *= 1280.0 / 1024.0
-            imgP[i][1] *= 720.0 / 576.0
-            groundP[i][0] = groundP[i][0] * 0.16 + gw / 2.0
-            groundP[i][1] = gh - groundP[i][1] * 0.1
+        # # calc homography (set_B)
+        # imgP = [[376, 365], [706, 359],  [731, 407], [349, 413]]
+        # groundP = [[-90, 190], [90, 190],  [90, 100], [-90, 100]]
+        # for i in range(4):
+        #     imgP[i][0] *= 1280.0 / 1024.0
+        #     imgP[i][1] *= 720.0 / 576.0
+        #     groundP[i][0] = groundP[i][0] * 0.16 + gw / 2.0
+        #     groundP[i][1] = gh - groundP[i][1] * 0.1
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
 
         list_H = []
@@ -103,7 +102,7 @@ class TusimpleLane(tf.data.Dataset):
         if augmentation:
             TusimpleLane.H, TusimpleLane.map_x, TusimpleLane.map_y = self.create_map(src_img_size=(720, 1280),
                                                                                     ground_size=TusimpleLane.groundSize,
-                                                                                    augmentation_deg=[0.0, -20.0, 20.0])
+                                                                                    augmentation_deg=[0.0, -15.0, 15.0, -30.0, 30.0])
         else:
             TusimpleLane.H, TusimpleLane.map_x, TusimpleLane.map_y = self.create_map(src_img_size=(720, 1280),
                                                                                     ground_size=TusimpleLane.groundSize)
@@ -192,7 +191,7 @@ class TusimpleLane(tf.data.Dataset):
         if width != 1280 or height != 720:
             image = cv2.resize(image, (1280, 720))  
 
-        gImg = cv2.remap(image, TusimpleLane.map_x[refIdx], TusimpleLane.map_y[refIdx], interpolation=cv2.INTER_NEAREST)
+        gImg = cv2.remap(image, TusimpleLane.map_x[refIdx], TusimpleLane.map_y[refIdx], interpolation=cv2.INTER_NEAREST, borderValue=(125, 125, 125))
         imgf = np.asarray(gImg) * (1.0/ 255.0)
 
 
@@ -520,9 +519,9 @@ class TusimpleLane(tf.data.Dataset):
                 with Image.open(image_path) as image:
                     image_ary = np.asarray(image)
                 
-                # if (count >=32):
-                #     break
-                # count += 1
+                if (count >=32):
+                    break
+                count += 1
 
                 for refIdx in range(len(TusimpleLane.H)):
                     yield (image_ary, label_lanes, label_h_samples, augmentation, refIdx)

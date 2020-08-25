@@ -335,8 +335,9 @@ def tflite_image_test(tflite_model_quant_file, dataset, net_input_img_size, x_an
         y_true = test_label
         acc = lane_accuracy(tf.convert_to_tensor(y_true), tf.convert_to_tensor(y_pred, dtype=tf.float32))
 
-        prediction = tf.keras.activations.softmax(tf.convert_to_tensor(prediction, dtype=tf.float32)).numpy()
-
+        # prediction = tf.keras.activations.softmax(tf.convert_to_tensor(prediction, dtype=tf.float32)).numpy()
+        prediction = (prediction > 0.5)
+            
 
         main_img = test_img
         main_img = cv2.cvtColor(main_img[0], cv2.COLOR_BGR2GRAY)
@@ -360,13 +361,13 @@ def tflite_image_test(tflite_model_quant_file, dataset, net_input_img_size, x_an
                 cv2.line(all_pred, (all_pred.shape[1] -2, 0), (all_pred.shape[1] -2, 800), (255, 255, 255), 2)
                 all_pred = cv2.hconcat([all_pred, img])
             
-            _, img = cv2.threshold(img, 50, 255, cv2.THRESH_TOZERO)
+            # _, img = cv2.threshold(img, 50, 255, cv2.THRESH_TOZERO)
             if mask is None:
                 mask = img
             else:
                 mask = mask + img
 
-        valu, mask_bin = cv2.threshold(mask, 50, 255, cv2.THRESH_BINARY_INV)
+        _, mask_bin = cv2.threshold(mask, 50, 255, cv2.THRESH_BINARY_INV)
         main_img = cv2.bitwise_and(main_img, mask_bin)
         main_img = cv2.bitwise_or (main_img, mask)
 
@@ -423,7 +424,7 @@ def time_test(x_in, model):
 # --------------------------------------------------------------------------------------------------------------
 def representative_data_gen(dataset):
     def _gen():
-        for input_value in dataset.take(10):
+        for input_value in dataset.take(1):
             # Model has only one input so each data point has one element.
             yield [input_value[0]]
     
@@ -472,7 +473,7 @@ if __name__ == '__main__':
     # x_anchors = 96
     # y_anchors = 54
     x_anchors = 64
-    y_anchors = 64
+    y_anchors = 32
     max_lane_count = 10
     train_dataset_path = "/home/dana/Datasets/ML/TuSimple/train_set"
     train_label_set = ["label_data_0313.json", "label_data_0531.json", "label_data_0601.json"]
@@ -481,7 +482,12 @@ if __name__ == '__main__':
     test_label_set = ["test_label.json"]
 
     full_dataset_path = "/home/dana/Datasets/ML/TuSimple/full_set"
-    full_label_set = ["label_data_0313.json", "label_data_0531.json", "label_data_0601.json", "test_label.json"]
+    full_label_set = [
+        "label_data_0313.json",
+        "label_data_0531.json",
+        "label_data_0601.json",
+        "test_label.json"
+        ]
 
     another_dataset_path = "/home/dana/Datasets/ML/TuSimple/another_test"
     another_label_set = ["test.json"]
@@ -497,24 +503,18 @@ if __name__ == '__main__':
     representative_dataset = train_batches.batch(1)
     train_batches = train_batches.shuffle(1000).batch(32)
 
-    # CC = 0
-    # for elem in representative_dataset:
-    #     # print("CC ", CC)
-    #     CC+=1
-    # sys.exit(0)
-
     # valid_batches = datasets.TusimpleLane(test_dataset_path, test_label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count, False)
     valid_batches = datasets.TusimpleLane(full_dataset_path, full_label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count, augmentation=augmentation)
     # valid_batches = datasets.TusimpleLane(another_dataset_path, another_label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count, False)
     # valid_batches = datasets.TusimpleLane(setA_dataset_path, setA_label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count, False)
-    valid_batches = datasets.TusimpleLane(setB_dataset_path, setB_label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count, False)
+    # valid_batches = datasets.TusimpleLane(setB_dataset_path, setB_label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count, False)
     valid_batches = valid_batches.batch(1)
 
  
     # tflite_model_quant_file = 'model_int8.tflite'
     # tflite_image_test(tflite_model_quant_file, valid_batches, net_input_img_size, x_anchors, y_anchors, max_lane_count)
-    # tflite_image_homography_test(valid_batches, net_input_img_size, x_anchors, y_anchors, max_lane_count)
-    # # tflite_evaluate(tflite_model_quant_file, valid_batches)
+    # # tflite_image_homography_test(valid_batches, net_input_img_size, x_anchors, y_anchors, max_lane_count)
+    # # # tflite_evaluate(tflite_model_quant_file, valid_batches)
     # sys.exit(0)
 
 
@@ -525,15 +525,22 @@ if __name__ == '__main__':
     flag_training=False
 
     if flag_training:
-        model = AlphaLaneModel(net_input_img_size, x_anchors, y_anchors, max_lane_count, quantization_aware_training=False, input_batch_size=None)
+        model = AlphaLaneModel(net_input_img_size, x_anchors, y_anchors, max_lane_count,
+                               training=flag_training,
+                               quantization_aware_training=False, input_batch_size=None)
     else:
-        model = AlphaLaneModel(net_input_img_size, x_anchors, y_anchors, max_lane_count, quantization_aware_training=False, input_batch_size=1)
+        model = AlphaLaneModel(net_input_img_size, x_anchors, y_anchors, max_lane_count,
+                               training=flag_training,
+                               quantization_aware_training=False, input_batch_size=1)
     
     model.summary()
     if not flag_training:
         model.load_weights(tf.train.latest_checkpoint(checkpoint_path))     # load pretrained
     model.load_weights(tf.train.latest_checkpoint(checkpoint_path))     # load pretrained
+
+    
     # tf.keras.utils.plot_model(model, 'model.png')
+    # sys.exit(0)
 
     if flag_training:
         model.compile(
@@ -542,21 +549,21 @@ if __name__ == '__main__':
                       loss=LaneLoss(),
                       metrics=[LaneAccuracy()])
 
-        train(model, train_batches, valid_batches, checkpoint_path=checkpoint_path, train_epochs=200)
-
+        train(model, train_batches, valid_batches, checkpoint_path=checkpoint_path, train_epochs=50)
 
     # Convert the model.
     print("---------------------------------------------------")
     print("Conver model (int8)")
     print("---------------------------------------------------")
+    tf.lite.TFLiteConverter.from_concrete_functions
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
     # ------------------------------------------------
     ## at QAT, with these flags will cause many error.
     converter.representative_dataset = representative_data_gen(representative_dataset)
-    converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+    # converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
     converter.inference_input_type = tf.uint8
-    converter.inference_output_type = tf.uint8
+    converter.inference_output_type = tf.float32
     # ------------------------------------------------
     tflite_model = converter.convert()
 

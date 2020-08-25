@@ -321,8 +321,63 @@ def _DensenetBlock(x, filters, connect_count, name='', quantization_aware_traini
     # return x
 
 
+
 # ---------------------------------------------------
-def AlphaLaneModel(net_input_img_size, x_anchors, y_anchors, max_lane_count, name='', input_batch_size=None, quantization_aware_training=False):
+class FeatureDownsamplingBlock(tf.keras.layers.Layer):
+    def __init__(self,
+                 filters,
+                 kernel_size=(3, 3),
+                 strides=(1, 1),
+                 padding='same',
+                 name=None,
+                 is_training=True):
+        super(FeatureDownsamplingBlock, self).__init__(name=name)
+
+        self.conv = tf.keras.layers.Conv2D(filters, kernel_size=kernel_size, padding=padding, strides=strides, use_bias=False)
+        self.bn = tf.keras.layers.BatchNormalization()
+        self.relu = tf.keras.layers.ReLU(max_value=6.0)
+
+    def call(self, x, training=False):
+        x = self.conv(x)
+        x = self.bn(x, training= training)
+        x = self.relu(x)
+
+        return x
+
+# ---------------------------------------------------
+class MarkingSegmentationFeatureDecoder(tf.keras.layers.Layer):
+    def __init__(self, units=32):
+        super(MarkingSegmentationFeatureDecoder, self).__init__()
+        self.softmax_x_anchors = tf.keras.layers.Softmax()
+        self.pooling = tf.keras.layers.MaxPool2D(pool_size=(10, 1))
+
+    def call(self, inputs):
+        batch, lane_count, y_anchors, x_anchors = inputs.get_shape().as_list()
+        
+        x = inputs
+        x = self.softmax_x_anchors(inputs)
+        
+        # x = self.pooling(x)
+
+        # max_list = []
+        # for i in range(lane_count):
+        #     m = tf.slice(x, [0, i, 0, 0], [-1, 1, -1, x_anchors -1])
+        #     max_list.append(m)
+        
+        # x = tf.keras.layers.Maximum()(max_list)
+
+        return x
+
+# ---------------------------------------------------
+def AlphaLaneModel(net_input_img_size,
+                   x_anchors,
+                   y_anchors,
+                   max_lane_count,
+                   name='',
+                   training=True,
+                   input_batch_size=None,
+                   quantization_aware_training=False):
+
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!  97% accuracy
     input = tf.keras.Input(name='input', shape=(net_input_img_size[1], net_input_img_size[0], 3), batch_size=input_batch_size)
     x = input
@@ -330,24 +385,12 @@ def AlphaLaneModel(net_input_img_size, x_anchors, y_anchors, max_lane_count, nam
     QAT = tfmot.quantization.keras.quantize_annotate_layer
 
     # FeatureDownsamplingBlock A
-    x = tf.keras.layers.Conv2D(8, kernel_size=(3, 3), padding='same', strides=(2, 2), use_bias=False, name='conv_A')(x)
+    # x = FeatureDownsamplingBlock(filters=16, kernel_size=(3, 3), padding='same', strides=(2, 2))(x)
+    x = tf.keras.layers.Conv2D(16, kernel_size=(3, 3), padding='same', strides=(2, 2), use_bias=False)(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.ReLU(6)(x)
 
     # FeatureDownsamplingBlock B
-    x_in = x
-    x = tf.keras.layers.Conv2D(16, kernel_size=(3, 3), padding='same', use_bias=False, strides=(2, 2))(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.ReLU(6)(x)
-    x = tf.keras.layers.Conv2D(16, kernel_size=(3, 3), padding='same', use_bias=False)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x_in = tf.keras.layers.Conv2D(16, kernel_size=(1, 1), padding='same', use_bias=False, strides=(2, 2))(x_in)
-    x_in = tf.keras.layers.BatchNormalization()(x_in)
-    x = tf.keras.layers.Add()([x, x_in])
-    x = tf.keras.layers.ReLU(6)(x)
-
-
-    # FeatureDownsamplingBlock C
     x_in = x
     x = tf.keras.layers.Conv2D(32, kernel_size=(3, 3), padding='same', use_bias=False, strides=(2, 2))(x)
     x = tf.keras.layers.BatchNormalization()(x)
@@ -360,16 +403,30 @@ def AlphaLaneModel(net_input_img_size, x_anchors, y_anchors, max_lane_count, nam
     x = tf.keras.layers.ReLU(6)(x)
 
 
+    # FeatureDownsamplingBlock C
+    x_in = x
+    x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same', use_bias=False, strides=(2, 2))(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.ReLU(6)(x)
+    x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same', use_bias=False)(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x_in = tf.keras.layers.Conv2D(64, kernel_size=(1, 1), padding='same', use_bias=False, strides=(2, 2))(x_in)
+    x_in = tf.keras.layers.BatchNormalization()(x_in)
+    x = tf.keras.layers.Add()([x, x_in])
+    x = tf.keras.layers.ReLU(6)(x)
+
+    x_in = x
+    x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same', use_bias=False)(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.ReLU(6)(x)
+    x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same', use_bias=False)(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Add()([x, x_in])
+    x = tf.keras.layers.ReLU(6)(x)
+
     x_feature_C = x
 
     # FeatureDownsamplingBlock D
-    # x = tf.keras.layers.MaxPool2D(pool_size=(2, 2))(x)
-    # x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same', strides=(2, 2), use_bias=False)(x)
-    # x = tf.keras.layers.BatchNormalization()(x)
-    # x = tf.keras.layers.ReLU(6)(x)
-
-    # dense 
-    # x = _DensenetBlock(x, filters=32, connect_count=6, name='DensenetBlock_6', quantization_aware_training=quantization_aware_training)
     x_in = x
     x = tf.keras.layers.Conv2D(96, kernel_size=(3, 3), padding='same', use_bias=False, strides=(2, 2))(x)
     x = tf.keras.layers.BatchNormalization()(x)
@@ -399,18 +456,20 @@ def AlphaLaneModel(net_input_img_size, x_anchors, y_anchors, max_lane_count, nam
     x = tf.keras.layers.Add()([x, x_in])
     x = tf.keras.layers.ReLU(6)(x)
 
-
-
     # FeatureUpsamplingBlock
-    # x = _FeatureUpsamplingBlock(x, 128, kernel_size=(3, 3), strides=(2, 2), padding='same', name ='up_7', quantization_aware_training=quantization_aware_training)
-    # x = tf.keras.layers.ReLU(6)(x)
-     
     if not quantization_aware_training:
         x = tf.keras.layers.UpSampling2D(size=(2, 2), interpolation='nearest')(x)
     else:
         x = QAT(tf.keras.layers.UpSampling2D(size=(2, 2), interpolation='nearest'),
                 quantize_config=NoOpQuantizeConfig()) (x)
 
+    # concat
+    if not quantization_aware_training:
+        x = tf.keras.layers.Concatenate()([x, x_feature_C])
+    else:
+        x = QAT(tf.keras.layers.Concatenate(),
+                quantize_config=NoOpQuantizeConfig()) ([x, x_feature_C])
+    
     x_in = x
     x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same', use_bias=False)(x)
     x = tf.keras.layers.BatchNormalization()(x)
@@ -421,7 +480,7 @@ def AlphaLaneModel(net_input_img_size, x_anchors, y_anchors, max_lane_count, nam
     x_in = tf.keras.layers.BatchNormalization()(x_in)
     x = tf.keras.layers.Add()([x, x_in])
     x = tf.keras.layers.ReLU(6)(x)
-
+    
     x_in = x
     x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same', use_bias=False)(x)
     x = tf.keras.layers.BatchNormalization()(x)
@@ -431,26 +490,10 @@ def AlphaLaneModel(net_input_img_size, x_anchors, y_anchors, max_lane_count, nam
     x = tf.keras.layers.Add()([x, x_in])
     x = tf.keras.layers.ReLU(6)(x)
 
-    x_in = x
-    x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same', use_bias=False)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.ReLU(6)(x)
-    x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same', use_bias=False)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Add()([x, x_in])
-    x = tf.keras.layers.ReLU(6)(x)
- 
-    # concat
     if not quantization_aware_training:
-        x = tf.keras.layers.Concatenate()([x, x_feature_C])
+        x = tf.keras.layers.UpSampling2D(size=(1, 2), interpolation='nearest')(x)
     else:
-        x = QAT(tf.keras.layers.Concatenate(),
-                quantize_config=NoOpQuantizeConfig()) ([x, x_feature_C])
-
-    if not quantization_aware_training:
-        x = tf.keras.layers.UpSampling2D(size=(2, 2), interpolation='nearest')(x)
-    else:
-        x = QAT(tf.keras.layers.UpSampling2D(size=(2, 2), interpolation='nearest'),
+        x = QAT(tf.keras.layers.UpSampling2D(size=(1, 2), interpolation='nearest'),
                 quantize_config=NoOpQuantizeConfig()) (x)
 
     x_in = x
@@ -463,7 +506,7 @@ def AlphaLaneModel(net_input_img_size, x_anchors, y_anchors, max_lane_count, nam
     x_in = tf.keras.layers.BatchNormalization()(x_in)
     x = tf.keras.layers.Add()([x, x_in])
     x = tf.keras.layers.ReLU(6)(x)
-
+        
     x_in = x
     x = tf.keras.layers.Conv2D(32, kernel_size=(3, 3), padding='same', use_bias=False)(x)
     x = tf.keras.layers.BatchNormalization()(x)
@@ -475,6 +518,7 @@ def AlphaLaneModel(net_input_img_size, x_anchors, y_anchors, max_lane_count, nam
 
     x = tf.keras.layers.Conv2D(max_lane_count, kernel_size=(3, 3), padding='same', use_bias=False)(x)
     x = tf.keras.layers.BatchNormalization()(x)
+    confidence = x
 
 
     # output
@@ -484,7 +528,19 @@ def AlphaLaneModel(net_input_img_size, x_anchors, y_anchors, max_lane_count, nam
         x = tfmot.quantization.keras.quantize_annotate_layer(
             tf.keras.layers.Permute((3, 1, 2), name='output') , quantize_config=NoOpQuantizeConfig()) (x)
     
-    output = x
+    # for (index, net) in enumerate(x):
+    #     tf.print("index ", index)
+    #     # tf.print(" , net", tf.shape(net))
+    # tf.print("----------------")
+
+    if training:
+        output = x
+    else:
+        # x = tfmot.quantization.keras.quantize_annotate_layer(
+            # tf.keras.layers.Softmax(axis=3),  quantize_config=NoOpQuantizeConfig()) (x)
+        x = MarkingSegmentationFeatureDecoder()(x)
+        
+        output = x
 
 
     if quantization_aware_training:
