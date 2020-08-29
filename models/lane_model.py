@@ -330,16 +330,25 @@ class FeatureDownsamplingBlock(tf.keras.layers.Layer):
                  strides=(1, 1),
                  padding='same',
                  name=None,
-                 is_training=True):
+                 trainable=True):
         super(FeatureDownsamplingBlock, self).__init__(name=name)
 
-        self.conv = tf.keras.layers.Conv2D(filters, kernel_size=kernel_size, padding=padding, strides=strides, use_bias=False)
-        self.bn = tf.keras.layers.BatchNormalization()
-        self.relu = tf.keras.layers.ReLU(max_value=6.0)
+        self.conv = tf.keras.layers.Conv2D(filters=filters,
+                                           kernel_size=kernel_size,
+                                           padding=padding,
+                                           strides=strides,
+                                           use_bias=False,
+                                           trainable=trainable)
+        self.bn   = tf.keras.layers.BatchNormalization(trainable=trainable)
+        self.relu = tf.keras.layers.ReLU(6.0, trainable=trainable)
 
-    def call(self, x, training=False):
+        # x = tf.keras.layers.Conv2D(16, kernel_size=(3, 3), padding='same', strides=(2, 2), use_bias=False)(x)
+        # x = tf.keras.layers.BatchNormalization()(x)
+        # x = tf.keras.layers.ReLU(6)(x)
+    def call(self, x, training=True):
+        
         x = self.conv(x)
-        x = self.bn(x, training= training)
+        x = self.bn(x, training=training)
         x = self.relu(x)
 
         return x
@@ -356,6 +365,28 @@ class MarkingSegmentationFeatureDecoder(tf.keras.layers.Layer):
         
         x = inputs
         x = self.softmax_x_anchors(inputs)
+
+
+        batch = 1
+        x_anchors = 64
+        y_anchors = 32
+        cx = np.linspace(1, x_anchors, x_anchors, dtype=np.float32)
+        cy = np.linspace(1, y_anchors, y_anchors, dtype=np.float32)
+        cx_grid, cy_grid = np.meshgrid(cx, cy)
+        cx_grid = np.expand_dims(cx_grid, 0) # This is necessary for np.tile() to do what we want further down
+        cy_grid = np.expand_dims(cy_grid, 0) # This is necessary for np.tile() to do what we want further down
+
+        n_boxes = 10
+        boxes_tensor = np.zeros((batch, n_boxes, y_anchors, x_anchors), dtype=np.float32)
+        boxes_tensor[:, 0:n_boxes, :, :] = np.tile(cx_grid, (n_boxes, 1, 1)) # Set cx
+        # boxes_tensor[:, 1, :, :] = np.tile(cy_grid, (n_boxes, 1, 1)) # Set c
+        boxes_tensor = tf.keras.backend.tile(tf.keras.backend.constant(boxes_tensor, dtype=np.float32), (batch, 1, 1, 1))
+        
+        # x = tf.keras.backend.concatenate([x, boxes_tensor], axis = 1)
+        x = tf.keras.layers.Concatenate(axis=1, name='casot')([x, boxes_tensor])
+        # QAT = tfmot.quantization.keras.quantize_annotate_layer
+        # x = QAT(tf.keras.layers.Concatenate(axis=1, name='casot'),
+        #         quantize_config=NoOpQuantizeConfig()) ([x, boxes_tensor])
         
         # x = self.pooling(x)
 
@@ -369,6 +400,102 @@ class MarkingSegmentationFeatureDecoder(tf.keras.layers.Layer):
         return x
 
 # ---------------------------------------------------
+class ResnetBlock(tf.keras.layers.Layer):
+    def __init__(self,
+                 filters,
+                 kernel_size=(3, 3),
+                 strides=(1, 1),
+                 padding='same',
+                 name=None,
+                 trainable=True):
+        super(ResnetBlock, self).__init__(name=name)
+
+        self.filters = filters
+
+        self.conv_1 = tf.keras.layers.Conv2D(filters, kernel_size=kernel_size, padding='same', use_bias=False, strides=strides, trainable=trainable)
+        self.bn_1 = tf.keras.layers.BatchNormalization(trainable=trainable)
+        self.relu_1 = tf.keras.layers.ReLU(6, trainable=trainable)
+
+        self.conv_2 = tf.keras.layers.Conv2D(filters, kernel_size=kernel_size, padding='same', use_bias=False, trainable=trainable)
+        self.bn_2 = tf.keras.layers.BatchNormalization(trainable=trainable)
+
+        self.conv_sc = tf.keras.layers.Conv2D(filters, kernel_size=(1, 1), padding='same', use_bias=False, strides=strides, trainable=trainable)
+        self.bn_sc = tf.keras.layers.BatchNormalization(trainable=trainable)
+
+        self.add = tf.keras.layers.Add(trainable=trainable)
+        self.relu_out = tf.keras.layers.ReLU(6, trainable=trainable)
+
+    def call(self, x, training=True):
+        x_in = x
+        
+        x = self.conv_1(x)
+        x = self.bn_1(x)
+        x = self.relu_1(x)
+
+        x = self.conv_2(x)
+        x = self.bn_2(x)
+
+        _, _, inC = x_in.shape.as_list()[1:]
+        if self.filters != inC:
+            sc = self.conv_sc(x_in)
+            sc = self.bn_sc(sc)
+            x = self.add([x, sc])
+            x = self.relu_out(x)
+        else:
+            x = self.add([x, x_in])
+            x = self.relu_out(x)
+
+        return x
+
+# ---------------------------------------------------
+class Backbone(tf.keras.layers.Layer):
+    def __init__(self,
+                 trainable=True):
+        super(Backbone, self).__init__()
+
+        # FeatureDownsamplingBlock A
+        self.feature_A1 = FeatureDownsamplingBlock(filters=16, kernel_size=(3, 3), strides=(2, 2), trainable=trainable)
+
+        # FeatureDownsamplingBlock B
+        self.feature_B1 = ResnetBlock(filters=32, kernel_size=(3, 3), strides=(2, 2), trainable=trainable)
+        self.feature_B2 = ResnetBlock(filters=32, kernel_size=(3, 3), strides=(1, 1), trainable=trainable)
+
+        # FeatureDownsamplingBlock C
+        self.feature_C1 = ResnetBlock(filters=64, kernel_size=(3, 3), strides=(2, 2), trainable=trainable)
+        self.feature_C2 = ResnetBlock(filters=64, kernel_size=(3, 3), strides=(1, 1), trainable=trainable)
+
+        # FeatureDownsamplingBlock D
+        self.feature_D1 = ResnetBlock(filters=128, kernel_size=(3, 3), strides=(2, 2), trainable=trainable)
+        self.feature_D2 = ResnetBlock(filters=128, kernel_size=(3, 3), strides=(1, 1), trainable=trainable)
+        self.feature_D3 = ResnetBlock(filters=128, kernel_size=(3, 3), strides=(1, 1), trainable=trainable)
+
+        # FeatureUpsamplingBlock
+        self.upSampling_E1 = tf.keras.layers.UpSampling2D(size=(2, 2), interpolation='nearest')
+
+        # concat
+        self.concate_C2_E1 = tf.keras.layers.Concatenate()
+        
+    def call(self, x, training=False):
+        x = self.feature_A1(x, training=False)
+
+        x = self.feature_B1(x, training=False)
+        x = self.feature_B2(x, training=False)
+
+        x = self.feature_C1(x, training=False)
+        x = self.feature_C2(x, training=False)
+        x_feature_C = x
+
+        x = self.feature_D1(x, training=False)
+        x = self.feature_D2(x, training=False)
+        x = self.feature_D3(x, training=False)
+
+        x = self.upSampling_E1(x)
+        x = self.concate_C2_E1([x, x_feature_C])
+
+        return x
+
+
+# ---------------------------------------------------
 def AlphaLaneModel(net_input_img_size,
                    x_anchors,
                    y_anchors,
@@ -378,168 +505,55 @@ def AlphaLaneModel(net_input_img_size,
                    input_batch_size=None,
                    quantization_aware_training=False):
 
-    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!  97% accuracy
+    # # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!  97% accuracy
     input = tf.keras.Input(name='input', shape=(net_input_img_size[1], net_input_img_size[0], 3), batch_size=input_batch_size)
     x = input
 
-    QAT = tfmot.quantization.keras.quantize_annotate_layer
+    training_bone = True
+    # training_embedding = not training_bone
+    training_embedding = True
 
-    # FeatureDownsamplingBlock A
-    # x = FeatureDownsamplingBlock(filters=16, kernel_size=(3, 3), padding='same', strides=(2, 2))(x)
-    x = tf.keras.layers.Conv2D(16, kernel_size=(3, 3), padding='same', strides=(2, 2), use_bias=False)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.ReLU(6)(x)
+    # feature extractor
+    backbone = Backbone(trainable=training_bone)
+    x_bone =backbone(x)
 
-    # FeatureDownsamplingBlock B
-    x_in = x
-    x = tf.keras.layers.Conv2D(32, kernel_size=(3, 3), padding='same', use_bias=False, strides=(2, 2))(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.ReLU(6)(x)
-    x = tf.keras.layers.Conv2D(32, kernel_size=(3, 3), padding='same', use_bias=False)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x_in = tf.keras.layers.Conv2D(32, kernel_size=(1, 1), padding='same', use_bias=False, strides=(2, 2))(x_in)
-    x_in = tf.keras.layers.BatchNormalization()(x_in)
-    x = tf.keras.layers.Add()([x, x_in])
-    x = tf.keras.layers.ReLU(6)(x)
+    # feature extract
+    x_features = ResnetBlock(filters=64, kernel_size=(3, 3), strides=(1, 1), trainable=training_bone)(x_bone)
+    x_features = ResnetBlock(filters=64, kernel_size=(3, 3), strides=(1, 1), trainable=training_bone)(x_features)
+    x_features = ResnetBlock(filters=64, kernel_size=(3, 3), strides=(1, 1), trainable=training_bone)(x_features)
 
+    # class (semantic segmentation)
+    class_count = 2
+    x_cls = tf.keras.layers.Conv2D(class_count, kernel_size=(3, 3), padding='same', use_bias=False, trainable=training_bone)(x_features)
+    x_cls = tf.keras.layers.BatchNormalization(trainable=training_bone)(x_cls)
+    x_cls = tf.keras.layers.Softmax(trainable=training_bone)(x_cls)
 
-    # FeatureDownsamplingBlock C
-    x_in = x
-    x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same', use_bias=False, strides=(2, 2))(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.ReLU(6)(x)
-    x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same', use_bias=False)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x_in = tf.keras.layers.Conv2D(64, kernel_size=(1, 1), padding='same', use_bias=False, strides=(2, 2))(x_in)
-    x_in = tf.keras.layers.BatchNormalization()(x_in)
-    x = tf.keras.layers.Add()([x, x_in])
-    x = tf.keras.layers.ReLU(6)(x)
-
-    x_in = x
-    x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same', use_bias=False)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.ReLU(6)(x)
-    x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same', use_bias=False)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Add()([x, x_in])
-    x = tf.keras.layers.ReLU(6)(x)
-
-    x_feature_C = x
-
-    # FeatureDownsamplingBlock D
-    x_in = x
-    x = tf.keras.layers.Conv2D(96, kernel_size=(3, 3), padding='same', use_bias=False, strides=(2, 2))(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.ReLU(6)(x)
-    x = tf.keras.layers.Conv2D(96, kernel_size=(3, 3), padding='same', use_bias=False)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x_in = tf.keras.layers.Conv2D(96, kernel_size=(1, 1), padding='same', use_bias=False, strides=(2, 2))(x_in)
-    x_in = tf.keras.layers.BatchNormalization()(x_in)
-    x = tf.keras.layers.Add()([x, x_in])
-    x = tf.keras.layers.ReLU(6)(x)
-
-    x_in = x
-    x = tf.keras.layers.Conv2D(96, kernel_size=(3, 3), padding='same', use_bias=False)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.ReLU(6)(x)
-    x = tf.keras.layers.Conv2D(96, kernel_size=(3, 3), padding='same', use_bias=False)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Add()([x, x_in])
-    x = tf.keras.layers.ReLU(6)(x)
-
-    x_in = x
-    x = tf.keras.layers.Conv2D(96, kernel_size=(3, 3), padding='same', use_bias=False)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.ReLU(6)(x)
-    x = tf.keras.layers.Conv2D(96, kernel_size=(3, 3), padding='same', use_bias=False)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Add()([x, x_in])
-    x = tf.keras.layers.ReLU(6)(x)
-
-    # FeatureUpsamplingBlock
-    if not quantization_aware_training:
-        x = tf.keras.layers.UpSampling2D(size=(2, 2), interpolation='nearest')(x)
-    else:
-        x = QAT(tf.keras.layers.UpSampling2D(size=(2, 2), interpolation='nearest'),
-                quantize_config=NoOpQuantizeConfig()) (x)
-
-    # concat
-    if not quantization_aware_training:
-        x = tf.keras.layers.Concatenate()([x, x_feature_C])
-    else:
-        x = QAT(tf.keras.layers.Concatenate(),
-                quantize_config=NoOpQuantizeConfig()) ([x, x_feature_C])
-    
-    x_in = x
-    x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same', use_bias=False)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.ReLU(6)(x)
-    x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same', use_bias=False)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x_in = tf.keras.layers.Conv2D(64, kernel_size=(1, 1), padding='same', use_bias=False)(x_in)
-    x_in = tf.keras.layers.BatchNormalization()(x_in)
-    x = tf.keras.layers.Add()([x, x_in])
-    x = tf.keras.layers.ReLU(6)(x)
-    
-    x_in = x
-    x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same', use_bias=False)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.ReLU(6)(x)
-    x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same', use_bias=False)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Add()([x, x_in])
-    x = tf.keras.layers.ReLU(6)(x)
-
-    if not quantization_aware_training:
-        x = tf.keras.layers.UpSampling2D(size=(1, 2), interpolation='nearest')(x)
-    else:
-        x = QAT(tf.keras.layers.UpSampling2D(size=(1, 2), interpolation='nearest'),
-                quantize_config=NoOpQuantizeConfig()) (x)
-
-    x_in = x
-    x = tf.keras.layers.Conv2D(32, kernel_size=(3, 3), padding='same', use_bias=False)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.ReLU(6)(x)
-    x = tf.keras.layers.Conv2D(32, kernel_size=(3, 3), padding='same', use_bias=False)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x_in = tf.keras.layers.Conv2D(32, kernel_size=(1, 1), padding='same', use_bias=False)(x_in)
-    x_in = tf.keras.layers.BatchNormalization()(x_in)
-    x = tf.keras.layers.Add()([x, x_in])
-    x = tf.keras.layers.ReLU(6)(x)
-        
-    x_in = x
-    x = tf.keras.layers.Conv2D(32, kernel_size=(3, 3), padding='same', use_bias=False)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.ReLU(6)(x)
-    x = tf.keras.layers.Conv2D(32, kernel_size=(3, 3), padding='same', use_bias=False)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Add()([x, x_in])
-    x = tf.keras.layers.ReLU(6)(x)
-
-    x = tf.keras.layers.Conv2D(max_lane_count, kernel_size=(3, 3), padding='same', use_bias=False)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    confidence = x
+    # offset
+    offset_count = 1
+    x_offset = tf.keras.layers.Conv2D(offset_count, kernel_size=(3, 3), padding='same', use_bias=False, trainable=training_bone)(x_features)
+    x_offset = tf.keras.layers.BatchNormalization(trainable=training_bone)(x_offset)
 
 
-    # output
-    if not quantization_aware_training:
-        x = tf.keras.layers.Permute((3, 1, 2), name='output')(x)
-    else:
-        x = tfmot.quantization.keras.quantize_annotate_layer(
-            tf.keras.layers.Permute((3, 1, 2), name='output') , quantize_config=NoOpQuantizeConfig()) (x)
-    
-    # for (index, net) in enumerate(x):
-    #     tf.print("index ", index)
-    #     # tf.print(" , net", tf.shape(net))
-    # tf.print("----------------")
+    # embedding (instance segmentation)
+    # instance_feature_dim = 3
+    # x_embedding = ResnetBlock(filters=64, kernel_size=(3, 3), strides=(1, 1), trainable=training_embedding)(x_bone)
+    # x_embedding = ResnetBlock(filters=64, kernel_size=(3, 3), strides=(1, 1), trainable=training_embedding)(x_embedding)
+    # x_embedding = tf.keras.layers.Conv2D(instance_feature_dim, kernel_size=(3, 3), padding='same', use_bias=False, trainable=training_embedding)(x_embedding)
+    # x_embedding = tf.keras.layers.BatchNormalization(trainable=training_embedding)(x_embedding)
+    # x_embedding = tf.keras.layers.ReLU(6)(x_embedding)
+    # x = x_embedding
+
+
+    # concatenate offset and class as final output data
+    # x = tf.keras.layers.Concatenate()([x_cls, x_offset, x_embedding])
+    x = tf.keras.layers.Concatenate()([x_cls, x_offset])
 
     if training:
+        # output = [x, conf]
         output = x
     else:
-        # x = tfmot.quantization.keras.quantize_annotate_layer(
-            # tf.keras.layers.Softmax(axis=3),  quantize_config=NoOpQuantizeConfig()) (x)
-        x = MarkingSegmentationFeatureDecoder()(x)
-        
+        # x = MarkingSegmentationFeatureDecoder()(x)
+        # output = [x, conf]
         output = x
 
 
@@ -554,9 +568,176 @@ def AlphaLaneModel(net_input_img_size,
     else:
         with tf.keras.utils.custom_object_scope({'NoOpQuantizeConfig': NoOpQuantizeConfig}):
             model = tf.keras.Model(input, output, name="AlphaLaneNet")
+            
 
             return model
+    # # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!  97% accuracy
+
+
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!  97% accuracy
+    # input = tf.keras.Input(name='input', shape=(net_input_img_size[1], net_input_img_size[0], 3), batch_size=input_batch_size)
+    # x = input
+
+    # QAT = tfmot.quantization.keras.quantize_annotate_layer
+
+    # # FeatureDownsamplingBlock A
+    # # x = FeatureDownsamplingBlock(filters=16, kernel_size=(3, 3), padding='same', strides=(2, 2))(x)
+    # x = tf.keras.layers.Conv2D(16, kernel_size=(3, 3), padding='same', strides=(2, 2), use_bias=False)(x)
+    # x = tf.keras.layers.BatchNormalization()(x)
+    # x = tf.keras.layers.ReLU(6)(x)
+
+
+    # # FeatureDownsamplingBlock B
+    # x_in = x
+    # x = tf.keras.layers.Conv2D(32, kernel_size=(3, 3), padding='same', use_bias=False, strides=(2, 2))(x)
+    # x = tf.keras.layers.BatchNormalization()(x)
+    # x = tf.keras.layers.ReLU(6)(x)
+    # x = tf.keras.layers.Conv2D(32, kernel_size=(3, 3), padding='same', use_bias=False)(x)
+    # x = tf.keras.layers.BatchNormalization()(x)
+    # x_in = tf.keras.layers.Conv2D(32, kernel_size=(1, 1), padding='same', use_bias=False, strides=(2, 2))(x_in)
+    # x_in = tf.keras.layers.BatchNormalization()(x_in)
+    # x = tf.keras.layers.Add()([x, x_in])
+    # x = tf.keras.layers.ReLU(6)(x)
+
+
+    # # FeatureDownsamplingBlock C
+    # x_in = x
+    # x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same', use_bias=False, strides=(2, 2))(x)
+    # x = tf.keras.layers.BatchNormalization()(x)
+    # x = tf.keras.layers.ReLU(6)(x)
+    # x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same', use_bias=False)(x)
+    # x = tf.keras.layers.BatchNormalization()(x)
+    # x_in = tf.keras.layers.Conv2D(64, kernel_size=(1, 1), padding='same', use_bias=False, strides=(2, 2))(x_in)
+    # x_in = tf.keras.layers.BatchNormalization()(x_in)
+    # x = tf.keras.layers.Add()([x, x_in])
+    # x = tf.keras.layers.ReLU(6)(x)
+    
+    # x_in = x
+    # x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same', use_bias=False)(x)
+    # x = tf.keras.layers.BatchNormalization()(x)
+    # x = tf.keras.layers.ReLU(6)(x)
+    # x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same', use_bias=False)(x)
+    # x = tf.keras.layers.BatchNormalization()(x)
+    # x = tf.keras.layers.Add()([x, x_in])
+    # x = tf.keras.layers.ReLU(6)(x)
+
+    # x_feature_C = x
+
+    # # FeatureDownsamplingBlock D
+    # x_in = x
+    # x = tf.keras.layers.Conv2D(128, kernel_size=(3, 3), padding='same', use_bias=False, strides=(2, 2))(x)
+    # x = tf.keras.layers.BatchNormalization()(x)
+    # x = tf.keras.layers.ReLU(6)(x)
+    # x = tf.keras.layers.Conv2D(128, kernel_size=(3, 3), padding='same', use_bias=False)(x)
+    # x = tf.keras.layers.BatchNormalization()(x)
+    # x_in = tf.keras.layers.Conv2D(128, kernel_size=(1, 1), padding='same', use_bias=False, strides=(2, 2))(x_in)
+    # x_in = tf.keras.layers.BatchNormalization()(x_in)
+    # x = tf.keras.layers.Add()([x, x_in])
+    # x = tf.keras.layers.ReLU(6)(x)
+
+    # x_in = x
+    # x = tf.keras.layers.Conv2D(128, kernel_size=(3, 3), padding='same', use_bias=False)(x)
+    # x = tf.keras.layers.BatchNormalization()(x)
+    # x = tf.keras.layers.ReLU(6)(x)
+    # x = tf.keras.layers.Conv2D(128, kernel_size=(3, 3), padding='same', use_bias=False)(x)
+    # x = tf.keras.layers.BatchNormalization()(x)
+    # x = tf.keras.layers.Add()([x, x_in])
+    # x = tf.keras.layers.ReLU(6)(x)
+
+    # x_in = x
+    # x = tf.keras.layers.Conv2D(128, kernel_size=(3, 3), padding='same', use_bias=False)(x)
+    # x = tf.keras.layers.BatchNormalization()(x)
+    # x = tf.keras.layers.ReLU(6)(x)
+    # x = tf.keras.layers.Conv2D(128, kernel_size=(3, 3), padding='same', use_bias=False)(x)
+    # x = tf.keras.layers.BatchNormalization()(x)
+    # x = tf.keras.layers.Add()([x, x_in])
+    # x = tf.keras.layers.ReLU(6)(x)
+
+    # # FeatureUpsamplingBlock
+    # if not quantization_aware_training:
+    #     x = tf.keras.layers.UpSampling2D(size=(2, 2), interpolation='nearest')(x)
+    # else:
+    #     x = QAT(tf.keras.layers.UpSampling2D(size=(2, 2), interpolation='nearest'),
+    #             quantize_config=NoOpQuantizeConfig()) (x)
+
+    # # concat
+    # if not quantization_aware_training:
+    #     x = tf.keras.layers.Concatenate()([x, x_feature_C])
+    # else:
+    #     x = QAT(tf.keras.layers.Concatenate(),
+    #             quantize_config=NoOpQuantizeConfig()) ([x, x_feature_C])
+
+    # x_in = x
+    # x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same', use_bias=False)(x)
+    # x = tf.keras.layers.BatchNormalization()(x)
+    # x = tf.keras.layers.ReLU(6)(x)
+    # x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same', use_bias=False)(x)
+    # x = tf.keras.layers.BatchNormalization()(x)
+    # x_in = tf.keras.layers.Conv2D(64, kernel_size=(1, 1), padding='same', use_bias=False)(x_in)
+    # x_in = tf.keras.layers.BatchNormalization()(x_in)
+    # x = tf.keras.layers.Add()([x, x_in])
+    # x = tf.keras.layers.ReLU(6)(x)
+
+    # x_in = x
+    # x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same', use_bias=False)(x)
+    # x = tf.keras.layers.BatchNormalization()(x)
+    # x = tf.keras.layers.ReLU(6)(x)
+    # x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same', use_bias=False)(x)
+    # x = tf.keras.layers.BatchNormalization()(x)
+    # x = tf.keras.layers.Add()([x, x_in])
+    # x = tf.keras.layers.ReLU(6)(x)
+
+    # x_in = x
+    # x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same', use_bias=False)(x)
+    # x = tf.keras.layers.BatchNormalization()(x)
+    # x = tf.keras.layers.ReLU(6)(x)
+    # x = tf.keras.layers.Conv2D(64, kernel_size=(3, 3), padding='same', use_bias=False)(x)
+    # x = tf.keras.layers.BatchNormalization()(x)
+    # x = tf.keras.layers.Add()([x, x_in])
+    # x = tf.keras.layers.ReLU(6)(x)
+
+    # x_bone = x
+
+    # # class
+    # class_count = 2
+    # x_cls = tf.keras.layers.Conv2D(class_count, kernel_size=(3, 3), padding='same', use_bias=False)(x_bone)
+    # x_cls = tf.keras.layers.BatchNormalization()(x_cls)
+    # x_cls = tf.keras.layers.Softmax()(x_cls)
+
+    # # offset
+    # offset_count = 1
+    # x_offset = tf.keras.layers.Conv2D(offset_count, kernel_size=(3, 3), padding='same', use_bias=False)(x_bone)
+    # x_offset = tf.keras.layers.BatchNormalization()(x_offset)
+    
+    # # concatenate offset and class as final output data
+    # x = tf.keras.layers.Concatenate()([x_cls, x_offset])
+
+    # if training:
+    #     # output = [x, conf]
+    #     output = x
+    # else:
+    #     # x = MarkingSegmentationFeatureDecoder()(x)
+        
+    #     # output = [x, conf]
+    #     output = x
+
+
+    # if quantization_aware_training:
+    #     with tf.keras.utils.custom_object_scope({'NoOpQuantizeConfig': NoOpQuantizeConfig,
+    #                                              'Default8BitOutputQuantizeConfig':Default8BitOutputQuantizeConfig,
+    #                                              'Conv2DTranspose_QuantizeConfig':Conv2DTranspose_QuantizeConfig}):
+    #         model = tf.keras.Model(input, output, name="AlphaLaneNet")
+    #         q_aware_model = tfmot.quantization.keras.quantize_model(model)
+            
+    #         return q_aware_model
+    # else:
+    #     with tf.keras.utils.custom_object_scope({'NoOpQuantizeConfig': NoOpQuantizeConfig}):
+    #         model = tf.keras.Model(input, output, name="AlphaLaneNet")
+            
+
+    #         return model
+    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!  97% accuracy
+
 
     
     # # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!  97% accuracy

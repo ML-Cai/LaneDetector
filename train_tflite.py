@@ -10,9 +10,168 @@ import numpy as np
 import datetime
 from cv2 import cv2
 import datasets
+import math
 from models import AlphaLaneModel
 from losses import LaneLoss
+from losses import ConfidenceLoss
 from losses import LaneAccuracy
+from losses import ConfidenceAccuracy
+from losses import DiscriminativeLoss
+
+from scipy.interpolate import interp1d
+
+
+# y_pred = tf.constant([[[10, 20, 30, 40],
+#                        [10, 20, 30, 10],
+#                        [10, 20, 30, 40]],
+#                       [[10, 20, 30, 40],
+#                        [20, 20, 30, 40],
+#                        [10, 20, 30, 40]],
+#                       [[30, 20, 30, 40],
+#                        [20, 20, 30, 40],
+#                        [30, 20, 30, 40]]], dtype=np.float32)
+# y_true = tf.constant([[[1],
+#                        [1],
+#                        [1]],
+#                       [[2],
+#                        [2],
+#                        [2]],
+#                       [[3],
+#                        [3],
+#                        [3]]], dtype=np.float32)
+# DD = DiscriminativeLoss()
+# v = DD(y_true, y_pred)
+# print(v)
+# sys.exit(0)
+
+
+# label =  tf.constant([[0, 0, 0],
+#                       [1, 1, 1],
+#                       [2, 2, 2]])
+# label = tf.reshape(label, [3*3])            
+# unique_labels, unique_id, counts = tf.unique_with_counts(label)
+# num_instances = tf.size(unique_labels)
+# print("unique_labels ", unique_labels)
+# print("unique_id ", unique_id)
+# print("counts ", counts)
+# # sys.exit(0)
+
+# src_img = tf.constant([[[10, 20, 30, 40],
+#                         [10, 20, 30, 10],
+#                         [10, 20, 30, 40]],
+#                        [[10, 20, 30, 40],
+#                         [20, 20, 30, 40],
+#                         [10, 20, 30, 40]],
+#                        [[30, 20, 30, 40],
+#                         [20, 20, 30, 40],
+#                         [30, 20, 30, 40]]])
+# print("src_img",src_img.shape)
+# src_img = tf.reshape(src_img, [3*3, 4])
+# print("src_img",src_img)
+
+# segmented_sum = tf.math.unsorted_segment_sum(src_img, tf.constant(unique_id), num_segments=num_instances)
+# print("unsorted_segment_sum ", segmented_sum)
+
+# mu = tf.math.divide(segmented_sum, tf.reshape(counts, (-1, 1)))
+# print("mu ", mu)
+
+# mu_expand = tf.gather(mu, unique_id)
+
+
+# print("mu_expand", mu_expand)
+
+# delta_v = 0.1
+# src_img = tf.cast(src_img, tf.float64)
+# distance = tf.norm(tf.subtract(mu_expand, src_img), axis=1, ord=1)
+# distance = tf.subtract(distance, delta_v)
+# distance = tf.clip_by_value(distance, 0., distance)
+# distance = tf.square(distance)
+# print("distance", distance)
+
+# mu_interleaved_rep = tf.tile(mu, [num_instances, 1])
+# print("mu_interleaved_rep", mu_interleaved_rep)
+
+# mu_band_rep = tf.tile(mu, [1, num_instances])
+# mu_band_rep = tf.reshape( mu_band_rep, (num_instances * num_instances, 4))
+# print("mu_band_rep", mu_band_rep)
+
+# mu_diff = tf.subtract(mu_band_rep, mu_interleaved_rep)
+# print("mu_diff", mu_diff)
+
+# intermediate_tensor = tf.reduce_sum(tf.math.abs(mu_diff), axis=1)
+# zero_vector = tf.zeros(1, dtype=tf.float64)
+# bool_mask = tf.not_equal(intermediate_tensor, zero_vector)
+# mu_diff_bool = tf.boolean_mask(mu_diff, bool_mask)
+# print("mu_diff_bool", mu_diff_bool)
+# sys.exit(0)
+
+
+# x = [0, 10]
+# y = [0, 100]
+
+# f = interp1d(x, y)
+# xnew = np.linspace(0, 10, num=10, endpoint=True)
+
+# print(f(xnew))
+# sys.exit(0)
+
+# # (1, 10, 32, 64)
+# # batch = tf.keras.backend.shape(x)[0]
+# batch = 1
+# x_anchors = 64
+# y_anchors = 32
+# cx = np.linspace(1, x_anchors, x_anchors)
+# cy = np.linspace(1, y_anchors, y_anchors)
+# cx_grid, cy_grid = np.meshgrid(cx, cy)
+# cx_grid = np.expand_dims(cx_grid, 0) # This is necessary for np.tile() to do what we want further down
+# cy_grid = np.expand_dims(cy_grid, 0) # This is necessary for np.tile() to do what we want further down
+# print("cx_grid ", cx_grid)
+# print("cy_grid ", cy_grid)
+# print("cx_grid ", cx_grid.shape)
+# print("cy_grid ", cy_grid.shape)
+# # sys.exit(0)
+
+# n_boxes = 10
+# boxes_tensor = np.zeros((batch, n_boxes, y_anchors, x_anchors))
+# boxes_tensor[:, 0:n_boxes, :, :] = np.tile(cx_grid, (n_boxes, 1, 1)) # Set cx
+# # boxes_tensor[:, 1, :, :] = np.tile(cy_grid, (n_boxes, 1, 1)) # Set c
+# boxes_tensor = tf.keras.backend.tile(tf.keras.backend.constant(boxes_tensor, dtype='float32'), (batch, 1, 1, 1))
+# print("boxes_tensor ", boxes_tensor)
+# sys.exit(0)
+
+# cy = np.linspace(1, 10, 10)
+# cx = np.linspace(1, 10, 10)
+# print("cx ", cx)
+# print("cy ", cy)
+# cx_grid, cy_grid = np.meshgrid(cx, cy)
+
+# print("cx_grid ", cx_grid)
+# print("cx ", cx_grid[..., -8])
+# print("cx ", cx_grid[..., -7])
+# sys.exit(0)
+
+# print("cy_grid ", cy_grid)
+# print("cx_grid ", cx_grid.shape)
+# print("cy_grid ", cy_grid.shape)
+
+# cx_grid = np.expand_dims(cx_grid, -1) # This is necessary for np.tile() to do what we want further down
+# cy_grid = np.expand_dims(cy_grid, -1) # This is necessary for np.tile() to do what we want further down
+# print("cx_grid ", cx_grid)
+# print("cy_grid ", cy_grid)
+# print("cx_grid ", cx_grid.shape)
+# print("cy_grid ", cy_grid.shape)
+
+# feature_map_height = 10
+# feature_map_width = 10
+# n_boxes = 4
+# boxes_tensor = np.zeros((feature_map_height, feature_map_width, n_boxes, 4))
+# boxes_tensor[:, :, :, 0] = np.tile(cx_grid, (1, 1, n_boxes)) # Set cx
+# boxes_tensor[:, :, :, 1] = np.tile(cy_grid, (1, 1, n_boxes)) # Set cy
+# # boxes_tensor[:, :, :, 2] = wh_list[:, 0] # Set w
+# # boxes_tensor[:, :, :, 3] = wh_list[:, 1] # Set h
+
+# print("boxes_tensor ", boxes_tensor)
+# sys.exit(0)
 
 # groundP = [[-180, 1000],
 #            [180, 1000], 
@@ -298,7 +457,7 @@ def tflite_image_homography_test(dataset, net_input_img_size, x_anchors, y_ancho
 
 
 # --------------------------------------------------------------------------------------------------------------
-def tflite_image_test(tflite_model_quant_file, dataset, net_input_img_size, x_anchors, y_anchors, max_lane_count):
+def tflite_image_test_multi_lane(tflite_model_quant_file, dataset, net_input_img_size, x_anchors, y_anchors, max_lane_count):
     print("-------------------------------------------------------------------")
     print("image_test")
 
@@ -315,7 +474,7 @@ def tflite_image_test(tflite_model_quant_file, dataset, net_input_img_size, x_an
     tf.print("Input :  ", interpreter.get_input_details())
     tf.print("Output : ", interpreter.get_output_details())
     lane_accuracy = LaneAccuracy()
-    COLORS = np.random.randint(70, 255, [max_lane_count, 3], dtype=np.int32)
+    COLORS = np.random.randint(70, 255, [max_lane_count+1, 3], dtype=np.int32)
 
     for elem in dataset:
         test_img = elem[0]
@@ -349,6 +508,9 @@ def tflite_image_test(tflite_model_quant_file, dataset, net_input_img_size, x_an
         all_pred = None
         
         for si in range(max_lane_count):
+        # for si in range(2):
+            # if si == max_lane_count:
+            #     continue
             # pred = prediction[0][si]
             pred = prediction[0,si,:, 0:x_anchors-1]
             img = cv2.merge([pred * COLORS[si][0], pred * COLORS[si][1], pred * COLORS[si][2]])
@@ -396,6 +558,177 @@ def tflite_image_test(tflite_model_quant_file, dataset, net_input_img_size, x_an
 
 
 # --------------------------------------------------------------------------------------------------------------
+def tflite_image_test_instance_seg(tflite_model_quant_file, dataset, net_input_img_size, x_anchors, y_anchors, max_lane_count):
+    print("-------------------------------------------------------------------")
+    print("tflite_image_test_instance_seg")
+
+    interpreter = tf.lite.Interpreter(model_path=str(tflite_model_quant_file))
+    interpreter.allocate_tensors()
+
+    idx = 0
+    W = net_input_img_size[0]
+    H = net_input_img_size[1]
+    
+    input_index = interpreter.get_input_details()[0]
+    output_index = interpreter.get_output_details()[0]
+    
+    lane_accuracy = LaneAccuracy()
+    COLORS = np.random.randint(70, 255, [max_lane_count+1, 3], dtype=np.int32)
+
+    for elem in dataset:
+        test_img = elem[0]
+        test_label = elem[1]
+
+        if input_index['dtype']== np.uint8:
+            test_img = np.uint8(test_img * 255)
+
+        # inference
+        interpreter.set_tensor(input_index["index"], test_img)
+        interpreter.invoke()
+        np.set_printoptions(threshold=sys.maxsize)
+        prediction = interpreter.get_tensor(output_index["index"])
+        # prediction = np.float32(test_label)
+
+        main_img = test_img
+        main_img = cv2.cvtColor(main_img[0], cv2.COLOR_BGR2GRAY)
+        main_img = cv2.cvtColor(main_img, cv2.COLOR_GRAY2BGR)
+        
+        zeros = np.zeros((y_anchors,  x_anchors -1), dtype=np.uint8)
+        raw_output= []
+        mask = None
+
+        # pred_0 = prediction[0,:,:,0]
+        # pred_1 = prediction[0,:,:,1]
+        # pred_2 = prediction[0,:,:,2]
+        pred_0 = prediction[0,:,:,3]
+        pred_1 = prediction[0,:,:,4]
+        pred_2 = prediction[0,:,:,5]
+        img = cv2.merge([pred_2 * 100, pred_1 * 100, pred_0 * 100])
+        img = np.uint8(img)
+
+        mask = cv2.resize(img, (W, H))
+            
+        # main_img = cv2.bitwise_or (main_img, mask)
+        main_img = mask
+
+        prefix = 'build/' + str(idx)
+        # target_szie = (1280, 720)
+        target_szie = (800, 800)
+        main_img = cv2.resize(main_img, target_szie)
+
+        inv_dx = 1.0 / float(x_anchors)
+        inv_dy = 1.0 / float(y_anchors)
+        for dy in range(y_anchors):
+            for dx in range(x_anchors):
+                px = (inv_dx * dx) * target_szie[0]
+                py = (inv_dy * dy) * target_szie[1]
+                cv2.line(main_img, (int(px), 0), (int(px), target_szie[1]), (125, 125, 125))
+                cv2.line(main_img, (0, int(py)), (target_szie[0], int(py)), (125, 125, 125))
+
+        cv2.imshow("preview", main_img)
+        key = cv2.waitKey(0)
+
+
+# --------------------------------------------------------------------------------------------------------------
+def tflite_image_test(tflite_model_quant_file, dataset, net_input_img_size, x_anchors, y_anchors, max_lane_count):
+    print("-------------------------------------------------------------------")
+    print("image_test")
+
+    interpreter = tf.lite.Interpreter(model_path=str(tflite_model_quant_file))
+    interpreter.allocate_tensors()
+
+    idx = 0
+    W = net_input_img_size[0]
+    H = net_input_img_size[1]
+    
+    input_index = interpreter.get_input_details()[0]
+    output_index = interpreter.get_output_details()[0]
+    
+    tf.print("Input :  ", interpreter.get_input_details())
+    tf.print("Output : ", interpreter.get_output_details())
+    lane_accuracy = LaneAccuracy()
+    COLORS = np.random.randint(70, 255, [max_lane_count+1, 3], dtype=np.int32)
+
+    for elem in dataset:
+        test_img = elem[0]
+        test_label = elem[1]
+
+        if input_index['dtype']== np.uint8:
+            test_img = np.uint8(test_img * 255)
+
+        # # inference
+        interpreter.set_tensor(input_index["index"], test_img)
+        interpreter.invoke()
+        np.set_printoptions(threshold=sys.maxsize)
+        prediction = interpreter.get_tensor(output_index["index"])
+        # prediction = np.float32(test_label)
+
+        # check accuracy
+        # y_pred = prediction
+        # y_true = test_label
+        # acc = lane_accuracy(tf.convert_to_tensor(y_true), tf.convert_to_tensor(y_pred, dtype=tf.float32))
+
+        # prediction = tf.keras.activations.softmax(tf.convert_to_tensor(prediction, dtype=tf.float32)).numpy()
+        # prediction = (prediction > 0.5)
+            
+        main_img = test_img[0]
+        main_img = cv2.cvtColor(main_img, cv2.COLOR_BGR2GRAY)
+        main_img = cv2.cvtColor(main_img, cv2.COLOR_GRAY2BGR)
+        
+        all_pred = None
+
+        pred = prediction[0,:,:,0]
+        img = cv2.merge([pred * COLORS[0][0], pred * COLORS[0][1], pred * COLORS[0][2]])
+        img = np.uint8(img)
+        img = cv2.resize(img, (W, H))
+
+        _, mask_bin = cv2.threshold(img, 50, 255, cv2.THRESH_BINARY_INV)
+        # main_img = cv2.bitwise_and(main_img, mask_bin)
+        # main_img = cv2.bitwise_or (main_img, img)
+
+        groundSize = (256, 256)
+        inv_anchor_scale_x = (float)(groundSize[1]) / (float)(x_anchors)
+        inv_anchor_scale_y = (float)(groundSize[0]) / (float)(y_anchors) 
+        
+        for dy in range(y_anchors):
+            for dx in range(x_anchors):
+                offset = prediction[0,dy,dx,2]
+                offset = math.exp(offset)
+
+                ggx = dx * inv_anchor_scale_x
+                ggy = dy * inv_anchor_scale_y
+
+                pgx = ggx + offset
+                pgy = ggy
+                if prediction[0,dy,dx,0] > 0.5:
+                    cv2.line(main_img, (int(ggx), int(ggy)), (int(pgx), int(pgy)), (0, 0, 255))
+                    cv2.circle(main_img, (int(pgx), int(pgy)), 2, (0, 255, 0))
+                
+
+        prefix = 'build/' + str(idx)
+        # target_szie = (1280, 720)
+        target_szie = (800, 800)
+        main_img = cv2.resize(main_img, target_szie)
+
+        inv_dx = 1.0 / float(x_anchors)
+        inv_dy = 1.0 / float(y_anchors)
+        for dy in range(y_anchors):
+            for dx in range(x_anchors):
+                px = (inv_dx * dx) * target_szie[0]
+                py = (inv_dy * dy) * target_szie[1]
+                cv2.line(main_img, (int(px), 0), (int(px), target_szie[1]), (125, 125, 125))
+                cv2.line(main_img, (0, int(py)), (target_szie[0], int(py)), (125, 125, 125))
+
+        # cv2.putText(main_img, 'accuracy '+str(acc), org=(50, 50), fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=1.0, color=(0, 0, 255))
+        
+        # all_pred = cv2.resize(all_pred, (800, 180))
+        # main_img = cv2.vconcat((all_pred, main_img))
+        # main_img = all_pred
+
+        cv2.imshow("preview", main_img)
+        key = cv2.waitKey(0)
+
+# --------------------------------------------------------------------------------------------------------------
 def time_test(x_in, model):
     loop_count = 200
 
@@ -424,7 +757,7 @@ def time_test(x_in, model):
 # --------------------------------------------------------------------------------------------------------------
 def representative_data_gen(dataset):
     def _gen():
-        for input_value in dataset.take(1):
+        for input_value in dataset:
             # Model has only one input so each data point has one element.
             yield [input_value[0]]
     
@@ -460,11 +793,12 @@ def train(model, train_dataset, valid_batches, checkpoint_path, train_epochs=200
 
 # --------------------------------------------------------------------------------------------------
 if __name__ == '__main__':
+
+
     # config tensorflow to prevent out of memory when training
     physical_devices = tf.config.experimental.list_physical_devices('GPU')
     assert len(physical_devices) > 0, "Not enough GPU hardware devices available"
     config = tf.config.experimental.set_memory_growth(physical_devices[0], True)
-
 
     # net_input_img_size = (512, 288)
     net_input_img_size = (256, 256)
@@ -472,7 +806,7 @@ if __name__ == '__main__':
     # y_anchors = 72
     # x_anchors = 96
     # y_anchors = 54
-    x_anchors = 64
+    x_anchors = 32
     y_anchors = 32
     max_lane_count = 10
     train_dataset_path = "/home/dana/Datasets/ML/TuSimple/train_set"
@@ -505,18 +839,22 @@ if __name__ == '__main__':
 
     # valid_batches = datasets.TusimpleLane(test_dataset_path, test_label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count, False)
     valid_batches = datasets.TusimpleLane(full_dataset_path, full_label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count, augmentation=augmentation)
-    # valid_batches = datasets.TusimpleLane(another_dataset_path, another_label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count, False)
-    # valid_batches = datasets.TusimpleLane(setA_dataset_path, setA_label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count, False)
-    # valid_batches = datasets.TusimpleLane(setB_dataset_path, setB_label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count, False)
+    # valid_batches = datasets.TusimpleLane(setA_dataset_path, setA_label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count, augmentation=False)
+    # valid_batches = datasets.TusimpleLane(setB_dataset_path, setB_label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count, augmentation=False)
     valid_batches = valid_batches.batch(1)
 
- 
+    # for elem in valid_batches:
+    #     test_img = elem[0]
+    #     test_label = elem[1]
+    #     test_img = np.uint8(test_img[0] * 255)
+    #     cv2.imshow("preview", test_img)
+    #     # print(test_label.shape)
+    #     key = cv2.waitKey(0)
+
     # tflite_model_quant_file = 'model_int8.tflite'
     # tflite_image_test(tflite_model_quant_file, valid_batches, net_input_img_size, x_anchors, y_anchors, max_lane_count)
-    # # tflite_image_homography_test(valid_batches, net_input_img_size, x_anchors, y_anchors, max_lane_count)
-    # # # tflite_evaluate(tflite_model_quant_file, valid_batches)
+    # tflite_image_test_instance_seg(tflite_model_quant_file, valid_batches, net_input_img_size, x_anchors, y_anchors, max_lane_count)
     # sys.exit(0)
-
 
     # checkpoint_path = "tmp/fake-quantized-checkpoint/"
     # checkpoint_path = "tmp/non-QAT-checkpoint/"
@@ -532,24 +870,37 @@ if __name__ == '__main__':
         model = AlphaLaneModel(net_input_img_size, x_anchors, y_anchors, max_lane_count,
                                training=flag_training,
                                quantization_aware_training=False, input_batch_size=1)
-    
+
     model.summary()
+    # tf.keras.utils.plot_model(model, 'model.png')
+    
     if not flag_training:
         model.load_weights(tf.train.latest_checkpoint(checkpoint_path))     # load pretrained
-    model.load_weights(tf.train.latest_checkpoint(checkpoint_path))     # load pretrained
-
-    
-    # tf.keras.utils.plot_model(model, 'model.png')
+    # model.load_weights(tf.train.latest_checkpoint(checkpoint_path))     # load p/retrained
     # sys.exit(0)
 
     if flag_training:
-        model.compile(
-                      optimizer=tf.keras.optimizers.Nadam(lr=0.001),
-                    #   optimizer=tf.keras.optimizers.SGD(learning_rate=0.01) ,
-                      loss=LaneLoss(),
-                      metrics=[LaneAccuracy()])
+        # model.compile(
+        #               optimizer=tf.keras.optimizers.Nadam(lr=0.001),
+        #               loss_weights=[1.0,
+        #                             1.0],
+        #               loss={'label_output' : LaneLoss(),
+        #                     'confidence_output' : ConfidenceLoss()},
+        #               metrics={'label_output' : LaneAccuracy(),
+        #                        'confidence_output' : ConfidenceAccuracy()})
 
-        train(model, train_batches, valid_batches, checkpoint_path=checkpoint_path, train_epochs=50)
+        model.compile(optimizer=tf.keras.optimizers.Nadam(lr=0.001),
+                      loss=[LaneLoss()],
+                    #   metrics=[LaneAccuracy()]
+                      )
+
+        # model.compile(
+        #               optimizer=tf.keras.optimizers.Adam(lr=0.0001),
+        #               loss=[DiscriminativeLoss()],
+        #             #   metrics=[LaneAccuracy()]
+        #               )
+
+        train(model, train_batches, valid_batches, checkpoint_path=checkpoint_path, train_epochs=100)
 
     # Convert the model.
     print("---------------------------------------------------")
@@ -564,6 +915,7 @@ if __name__ == '__main__':
     # converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
     converter.inference_input_type = tf.uint8
     converter.inference_output_type = tf.float32
+    converter.experimental_new_converter=False
     # ------------------------------------------------
     tflite_model = converter.convert()
 
@@ -596,8 +948,10 @@ if __name__ == '__main__':
     print("---------------------------------------------------")
     print("Load model as TF-Lite and test")
     print("---------------------------------------------------")
+    interpreter = tf.lite.Interpreter(model_path=str(tflite_model_quant_file))
+    interpreter.allocate_tensors()
     tflite_image_test(tflite_model_quant_file, valid_batches, net_input_img_size, x_anchors, y_anchors, max_lane_count)
-    # tflite_evaluate(tflite_model_quant_file, valid_batches)
+    # tflite_image_test_instance_seg(tflite_model_quant_file, valid_batches, net_input_img_size, x_anchors, y_anchors, max_lane_count)
 
     # start = time.time()
     # for i in range(100):

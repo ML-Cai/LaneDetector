@@ -6,18 +6,20 @@ import sys
 import itertools
 import random
 import numpy as np
+import math
 import tensorflow as tf
 from PIL import Image
 from cv2 import cv2
+from scipy.interpolate import interp1d
 
 class TusimpleLane(tf.data.Dataset):
 
-    groundSize = (256, 256)
-    map_x = None
-    map_y = None
-    H = None
+    # groundSize = (256, 256)
+    # map_x = None
+    # map_y = None
+    # H = None
 
-    def create_map(src_img_size, ground_size, augmentation_deg=[0.0]):
+    def create_map(src_img_size, ground_size, augmentation_deg=None):
         h, w = src_img_size
         gh, gw = ground_size
 
@@ -60,6 +62,9 @@ class TusimpleLane(tf.data.Dataset):
         list_map_y = []
 
         groud_center = tuple(np.average(groundP, axis=0))
+        if augmentation_deg is None:
+            augmentation_deg = [0.0]
+
         for deg in augmentation_deg:
             R = cv2.getRotationMatrix2D(groud_center, deg, 1.0)
             rotate_groupP = []
@@ -93,19 +98,32 @@ class TusimpleLane(tf.data.Dataset):
         return list_H, list_map_x, list_map_y
 
     # ----------------------------------------------------------------------------------------
-    def __new__(self, dataset_path, label_set, net_input_img_size, x_anchors, y_anchors, max_lane_count, augmentation=False):
+    def __new__(self,
+                dataset_path,
+                label_set,
+                net_input_img_size,
+                x_anchors,
+                y_anchors,
+                max_lane_count,
+                ground_img_size = (256, 256),
+                augmentation=False):
         if (os.path.exists(dataset_path) == False):
             print("File doesn't exist, path : ", dataset_path)
             exit()
 
         # build map
+        augmentation_deg = None
         if augmentation:
-            TusimpleLane.H, TusimpleLane.map_x, TusimpleLane.map_y = self.create_map(src_img_size=(720, 1280),
-                                                                                    ground_size=TusimpleLane.groundSize,
-                                                                                    augmentation_deg=[0.0, -15.0, 15.0, -30.0, 30.0])
+            augmentation_deg=[0.0, -15.0, 15.0, -30.0, 30.0]
         else:
-            TusimpleLane.H, TusimpleLane.map_x, TusimpleLane.map_y = self.create_map(src_img_size=(720, 1280),
-                                                                                    ground_size=TusimpleLane.groundSize)
+            augmentation_deg=[0.0]
+        
+        H_list, map_x_list, map_y_list = self.create_map(src_img_size=(720, 1280),
+                                                         ground_size=ground_img_size,
+                                                         augmentation_deg=augmentation_deg)
+        H_list = tf.constant(H_list)
+        map_x_list = tf.constant(map_x_list)
+        map_y_list = tf.constant(map_y_list)
 
         # build dataset
         label_set = tf.data.Dataset.from_tensor_slices(label_set)
@@ -114,45 +132,21 @@ class TusimpleLane(tf.data.Dataset):
                                                output_types=(tf.dtypes.uint8,
                                                              tf.dtypes.int32,
                                                              tf.dtypes.int32,
-                                                             tf.dtypes.bool,
                                                              tf.dtypes.int32),
                                                output_shapes=((None),
-                                                              (None),
                                                               (None),
                                                               (None),
                                                               (None)),
                                                args=(dataset_path,
                                                      label_file_name,
-                                                     net_input_img_size,
-                                                     x_anchors,
-                                                     y_anchors,
-                                                     max_lane_count,
-                                                     augmentation)
+                                                     augmentation_deg)
                                                )
             )
-        
-        # # non homography
-        # pipe = pipe.map (
-        #         # convert data to training label and norimalization
-        #         lambda image, label_lanes, label_h_samples, augmentation, brightnessValue, saturationsValue, offsetX, offsetY : tf.py_function(func=self.map_data_read,
-        #                            inp=[image,
-        #                                 label_lanes,
-        #                                 label_h_samples,
-        #                                 net_input_img_size,
-        #                                 x_anchors,
-        #                                 y_anchors,
-        #                                 max_lane_count,
-        #                                 augmentation, brightnessValue, saturationsValue, offsetX, offsetY],
-        #                            Tout=(tf.dtypes.float32,
-        #                                  tf.dtypes.int32))
-        #         ,
-        #         num_parallel_calls=tf.data.experimental.AUTOTUNE
-        #     )
 
         pipe = pipe.map (
                 # convert data to training label and norimalization
-                lambda image, label_lanes, label_h_samples, augmentation, refIdx : 
-                    tf.py_function(func=self.map_projection_data_generator,
+                lambda image, label_lanes, label_h_samples, refIdx : 
+                    tf.numpy_function(func=self.tttmap_projection_data_generator,
                                    inp=[image,
                                         label_lanes,
                                         label_h_samples,
@@ -160,12 +154,36 @@ class TusimpleLane(tf.data.Dataset):
                                         x_anchors,
                                         y_anchors,
                                         max_lane_count,
-                                        refIdx],
-                                   Tout=(tf.dtypes.float32,
-                                         tf.dtypes.int8))
+                                        H_list[refIdx],
+                                        map_x_list[refIdx],
+                                        map_y_list[refIdx],
+                                        ground_img_size],
+                                   Tout=[tf.dtypes.float32,
+                                         tf.dtypes.float32])
                 ,
                 num_parallel_calls=tf.data.experimental.AUTOTUNE
             )
+
+        # pipe = pipe.map (
+        #         # convert data to training label and norimalization
+        #         lambda image, label_lanes, label_h_samples, refIdx : 
+        #             tf.numpy_function(func=self.map_instance_segmentation_data_generator,
+        #                            inp=[image,
+        #                                 label_lanes,
+        #                                 label_h_samples,
+        #                                 net_input_img_size,
+        #                                 x_anchors,
+        #                                 y_anchors,
+        #                                 max_lane_count,
+        #                                 H_list[refIdx],
+        #                                 map_x_list[refIdx],
+        #                                 map_y_list[refIdx],
+        #                                 ground_img_size],
+        #                            Tout=[tf.dtypes.float32,
+        #                                  tf.dtypes.float32])
+        #         ,
+        #         num_parallel_calls=tf.data.experimental.AUTOTUNE
+        #     )
 
         pipe = pipe.prefetch(  # Overlap producer and consumer works
                 tf.data.experimental.AUTOTUNE
@@ -174,9 +192,293 @@ class TusimpleLane(tf.data.Dataset):
         return pipe
 
     # ----------------------------------------------------------------------------------------
-    def map_projection_data_generator(image, label_lanes, label_h_samples, 
-                                      net_input_img_size, x_anchors, y_anchors, max_lane_count,
-                                      refIdx):
+    def map_instance_segmentation_data_generator(src_image,
+                                                 label_lanes,
+                                                 label_h_samples, 
+                                                 net_input_img_size,
+                                                 x_anchors,
+                                                 y_anchors,
+                                                 max_lane_count,
+                                                 H,
+                                                 map_x,
+                                                 map_y,
+                                                 groundSize):
+        # transform image by perspective matrix
+        height, width = src_image.shape[:2]
+        if width != 1280 or height != 720:
+            src_image = cv2.resize(src_image, (1280, 720))  
+
+        gImg = cv2.remap(src_image, map_x, map_y,
+                         interpolation=cv2.INTER_NEAREST,
+                         borderValue=(125, 125, 125))
+        imgf = np.float32(gImg) * (1.0/ 255.0)
+
+        # create index for slice id mapping from  ground x anchor, and y anchor
+        #   [y anchors,
+        #    x anchors]
+        #
+        class_count = 2
+        label = np.zeros((y_anchors, x_anchors, 1), dtype=np.float32)
+        
+    
+        # transform "h_samples" & "lanes" to desired format
+        anchor_scale_x = (float)(x_anchors) / (float)(groundSize[1])
+        anchor_scale_y = (float)(y_anchors) / (float)(groundSize[0])
+
+        # calculate anchor offsets
+        for laneIdx in range(min(len(label_lanes), max_lane_count)):
+            lane_data = label_lanes[laneIdx]
+
+            prev_gx = None
+            prev_gy = None
+            prev_ax = None
+            prev_ay = None
+            for idx in range(len(lane_data)):
+                dy = label_h_samples[idx]
+                dx = lane_data[idx]
+
+                if (dx < 0):
+                    continue
+
+                # do perspective transform at dx, dy
+                gx, gy, gz = np.matmul(H, [[dx], [dy], [1.0]])
+                if gz > 0:
+                    continue
+
+                # conver to anchor coordinate(grid)
+                gx = int(gx / gz)
+                gy = int(gy / gz)
+                if gx < 0 or gy < 0 or gx >=(groundSize[1]-1) or gy >= (groundSize[0]-1):
+                    continue
+
+                ax = int(gx * anchor_scale_x)
+                ay = int(gy * anchor_scale_y)
+
+                if ax < 0 or ay < 0 or ax >=(x_anchors-1) or ay >= (y_anchors-1):
+                    continue
+
+                label_value = (laneIdx + 1.0) * 50
+                label[ay][ax][0] = label_value
+
+                if prev_gx is None:
+                    prev_gx = gx
+                    prev_gy = gy
+                    prev_ax = ax
+                    prev_ay = ay
+                else:
+                    if abs(ay - prev_ay) <= 1:
+                        label[ay][ax][0] = label_value
+                    else:
+                        gA = np.array([prev_gx, prev_gy])
+                        gB = np.array([gx, gy])
+                        gLen = (float)(np.linalg.norm(gA - gB))
+                        gV = (gA - gB) / gLen
+
+                        inter_len = min(max((int)(abs(prev_gy - gy)), 1), 10)
+                        for dy in range(inter_len):
+                            gC = gB + gV * (float(dy) / float(inter_len)) * gLen
+
+                            ax = np.int32(gC[0] * anchor_scale_x)
+                            ay = np.int32(gC[1] * anchor_scale_y)
+
+                            label[ay][ax][0] = label_value
+
+                    prev_gx = gx
+                    prev_gy = gy
+                    prev_ax = ax
+                    prev_ay = ay
+
+
+        # label /= acc_count
+        return (imgf, label)
+
+
+    # ----------------------------------------------------------------------------------------
+    def tttmap_projection_data_generator(src_image,
+                                         label_lanes,
+                                         label_h_samples, 
+                                         net_input_img_size,
+                                         x_anchors,
+                                         y_anchors,
+                                         max_lane_count,
+                                         H,
+                                         map_x,
+                                         map_y,
+                                         groundSize):
+        # transform image by perspective matrix
+        height, width = src_image.shape[:2]
+        if width != 1280 or height != 720:
+            src_image = cv2.resize(src_image, (1280, 720))  
+
+        gImg = cv2.remap(src_image, map_x, map_y,
+                         interpolation=cv2.INTER_NEAREST,
+                         borderValue=(125, 125, 125))
+        imgf = np.float32(gImg) * (1.0/ 255.0)
+
+
+        # create label for class
+        class_list= {'background'         : [0, 1],
+                     'lane_marking'       : [1, 0]}
+        class_count = len(class_list)     # [background, road]
+
+        # create label for slice id mapping from  ground x anchor, and y anchor
+        #   [y anchors,
+        #    x anchors,
+        #    class count + x offset]
+        #
+        class_count = 2
+        offset_dim = 1
+        instance_label_dim = 1
+        label = np.zeros((y_anchors, x_anchors, class_count + offset_dim + instance_label_dim), dtype=np.float32)
+        acc_count = np.zeros((y_anchors, x_anchors, class_count + offset_dim), dtype=np.float32)
+        class_idx = 0
+        x_offset_idx = class_count
+        instance_label_idx = class_count + offset_dim
+
+        # init values
+        label[:,:,class_idx:class_idx+class_count] = class_list['background']
+        label[:,:,x_offset_idx] = 0.0001
+        
+        # acc_count[:] = 1
+        # acc_count.fill(1)
+        
+     
+        # transform "h_samples" & "lanes" to desired format
+        anchor_scale_x = (float)(x_anchors) / (float)(groundSize[1])
+        anchor_scale_y = (float)(y_anchors) / (float)(groundSize[0])
+        inv_anchor_scale_x = (float)(groundSize[1]) / (float)(x_anchors)
+        inv_anchor_scale_y = (float)(groundSize[0]) / (float)(y_anchors)
+        
+        # calculate anchor offsets
+        for laneIdx in range(min(len(label_lanes), max_lane_count)):
+            lane_data = label_lanes[laneIdx]
+
+            prev_gx = None
+            prev_gy = None
+            prev_ax = None
+            prev_ay = None
+            for idx in range(len(lane_data)):
+                dy = label_h_samples[idx]
+                dx = lane_data[idx]
+
+                if (dx < 0):
+                    continue
+
+                # do perspective transform at dx, dy
+                gx, gy, gz = np.matmul(H, [[dx], [dy], [1.0]])
+                if gz > 0:
+                    continue
+
+                # conver to anchor coordinate(grid)
+                gx = int(gx / gz)
+                gy = int(gy / gz)
+                if gx < 0 or gy < 0 or gx >=(groundSize[1]-1) or gy >= (groundSize[0]-1):
+                    continue
+
+                ax = int(gx * anchor_scale_x)
+                ay = int(gy * anchor_scale_y)
+
+                if ax < 0 or ay < 0 or ax >=(x_anchors-1) or ay >= (y_anchors-1):
+                    continue
+
+                instance_label_value = (laneIdx + 1.0) * 50                        
+                label[ay][ax][class_idx:class_idx+class_count] = class_list['lane_marking']
+
+                # offset = gx - (ax / anchor_scale_x)
+                # label[ay][ax][x_offset_idx] += math.log(offset+0.0001)
+                # acc_count [ay][ax][x_offset_idx] += 1
+            
+     
+                if prev_gx is None:
+                    prev_gx = gx
+                    prev_gy = gy
+                    prev_ax = ax
+                    prev_ay = ay
+                else:
+                    if abs(ay - prev_ay) <= 1:
+                        if acc_count [ay][ax][x_offset_idx] > 0:
+                            continue
+                        offset = gx - (ax / anchor_scale_x)
+                        label[ay][ax][x_offset_idx] += math.log(offset+0.0001)
+                        label[ay][ax][instance_label_idx] = instance_label_value
+                        acc_count [ay][ax][x_offset_idx] = 1
+                    else:
+                        gA = np.array([prev_gx, prev_gy])
+                        gB = np.array([gx, gy])
+                        gLen = (float)(np.linalg.norm(gA - gB))
+                        
+                        gV = (gA - gB) / gLen
+
+
+                        inter_len = min(max((int)(abs(prev_gy - gy)), 1), 10)
+                        # print("gA {}, gB {}, gV{}, gLen{}".format(gA, gB, gV, gLen))
+                        for dy in range(inter_len):
+                            gC = gB + gV * (float(dy) / float(inter_len)) * gLen
+
+                            ax = np.int32(gC[0] * anchor_scale_x)
+                            ay = np.int32(gC[1] * anchor_scale_y)
+
+                            # print("gC {}, ay {}, ax {}".format(gC, ay, ax))
+                            if acc_count [ay][ax][x_offset_idx] > 0:
+                                continue
+
+                            offset = gC[0] - (ax / anchor_scale_x)
+                            label[ay][ax][x_offset_idx] += math.log(offset+0.0001)
+                            label[ay][ax][class_idx:class_idx+class_count] = class_list['lane_marking']
+                            label[ay][ax][instance_label_idx] = instance_label_value
+                            acc_count [ay][ax][x_offset_idx] = 1
+
+                        # print("-----------------------------------------")
+                    prev_gx = gx
+                    prev_gy = gy
+                    prev_ax = ax
+                    prev_ay = ay
+
+                # if prev_gx is None:
+                #     prev_gx = gx
+                #     prev_gy = gy
+                #     prev_ax = ax
+                #     prev_ay = ay
+                # else:
+                #     inter_len = min(max((int)(abs(prev_gy - gy)), 1), 3)
+                #     ref_x = [float(prev_gx), float(gx)]
+                #     ref_y = [float(prev_gy), float(gy)]
+                #     f = interp1d(ref_y, ref_x)      # use y to predict x
+                #     inter_gy_list = np.linspace(prev_gy, gy, num=inter_len, endpoint=True)
+                #     inter_gx_list = f(inter_gy_list)
+
+                #     for inter_gx, inter_gy in zip(inter_gx_list, inter_gy_list):
+                #         ax = int(inter_gx * anchor_scale_x)
+                #         ay = int(inter_gy * anchor_scale_y)
+
+                #         if ax < 0 or ay < 0 or ax >=(x_anchors-1) or ay >= (y_anchors-1):
+                #             continue
+                    
+                #         if acc_count [ay][ax][x_offset_idx] > 0:
+                #             continue
+                #         acc_count [ay][ax][x_offset_idx] = 1
+                #         label[ay][ax][class_idx:class_idx+class_count] = class_list['lane_marking']
+
+                #         offset = inter_gx - (ax / anchor_scale_x)
+                #         label[ay][ax][x_offset_idx] += math.log(offset+0.0001)
+                        
+
+        # label /= acc_count
+        return (imgf, label)
+
+
+
+    def map_projection_data_generator(image,
+                                      label_lanes,
+                                      label_h_samples, 
+                                      net_input_img_size,
+                                      x_anchors,
+                                      y_anchors,
+                                      max_lane_count,
+                                      refIdx,
+                                      H,
+                                      map_x,
+                                      map_y):
         # get param value
         image = image.numpy()
         label_lanes = label_lanes.numpy()
@@ -185,85 +487,41 @@ class TusimpleLane(tf.data.Dataset):
         x_anchors = x_anchors.numpy()
         y_anchors = y_anchors.numpy()
         max_lane_count = max_lane_count.numpy()
+        H = H.numpy()[0]
 
-        
+        # transform image by perspective matrix
         height, width = image.shape[:2]
         if width != 1280 or height != 720:
             image = cv2.resize(image, (1280, 720))  
 
-        gImg = cv2.remap(image, TusimpleLane.map_x[refIdx], TusimpleLane.map_y[refIdx], interpolation=cv2.INTER_NEAREST, borderValue=(125, 125, 125))
+        gImg = cv2.remap(image,
+                         TusimpleLane.map_x[refIdx],
+                         TusimpleLane.map_y[refIdx],
+                         interpolation=cv2.INTER_NEAREST,
+                         borderValue=(125, 125, 125))
         imgf = np.asarray(gImg) * (1.0/ 255.0)
 
 
         # transform "h_samples" & "lanes" to desired format
-        label = np.zeros((max_lane_count, y_anchors, x_anchors), dtype=np.int8)
         x_scale = (float)(x_anchors) / (float)(TusimpleLane.groundSize[1])
         y_scale = (float)(y_anchors) / (float)(TusimpleLane.groundSize[0])
-        lane_useage = np.zeros(shape=(max_lane_count), dtype=np.int32)
+        
+        # create label for class
+        class_list= {'background'         : [0, 1],
+                     'lane_marking'       : [1, 0]}
+        class_count = len(class_list)     # [background, road]
+
+        # create label for slice id mapping from  ground x anchor, and y anchor
+        #   [y anchors,
+        #    x anchors,
+        #    class count + x offset]
+        #
+        label = np.zeros((y_anchors, x_anchors, class_count + 1), dtype=np.int8)
+
 
         for laneIdx in range(min(len(label_lanes), max_lane_count)):
             lane_data = label_lanes[laneIdx]
-            
-            ####################################################
-            pA = None
-            pB = None
-            count = 0
-            for idx in range(len(lane_data) -1, 0, -1):
-                dy = label_h_samples[idx]
-                dx = lane_data[idx]
 
-                if dx == -2:
-                    continue
-
-                gx, gy, gz = np.matmul(TusimpleLane.H[refIdx], [[dx], [dy], [1.0]])
-                if gz >= 0:
-                    continue
-                
-                gx /= gz
-                gy /= gz
-                if gx < 0 or gy < 0 or gx>= TusimpleLane.groundSize[1] or gy >= TusimpleLane.groundSize[0]:
-                    continue
-                
-                if pA is None:
-                    pA = [gx, gy]
-                else:
-                    pB = [gx, gy]
-                count += 1
-                if (count > 5):
-                    break
-            
-            if pA is None or pB is None:
-                continue
-
-            pA = np.array(pA)
-            pB = np.array(pB)
-            pV = (pA - pB) / (float)(np.linalg.norm(pA - pB))
-            pC = pB + pV * (TusimpleLane.groundSize[0] - pB[1]) * (1.0 /pV[1])
-
-            if pC[0] <0:
-                laneAnchorIdx = 0
-            elif pC[0] >= TusimpleLane.groundSize[1]:
-                laneAnchorIdx = max_lane_count -1
-            else:
-                laneAnchorIdx = 1 + int((pC[0] * x_scale * (max_lane_count -2) ) / x_anchors)
-
-            
-            # discard lanes out of ground.
-            if laneAnchorIdx < 0 or laneAnchorIdx >= max_lane_count:
-                continue
-
-            ####################################################
-            lane_useage[laneAnchorIdx] += 1
-            if lane_useage[laneAnchorIdx] > 1:
-                if laneAnchorIdx == 0: # use new
-                    label[laneAnchorIdx,:,:] = 0
-                else:  # discard
-                    continue
-
-                    
-                #tf.print("data alearday used ", lane_useage, " ------> ", len(label_lanes))
-                # sys.exit(0)
-                
             px = -1
             py = -1
             for idx in range(len(lane_data)):
@@ -274,7 +532,7 @@ class TusimpleLane(tf.data.Dataset):
                     continue
 
                 # roate dx, dy
-                gx, gy, gz = np.matmul(TusimpleLane.H[refIdx], [[dx], [dy], [1.0]])
+                gx, gy, gz = np.matmul(H[refIdx], [[dx], [dy], [1.0]])
                 if gz > 0:
                     continue
                 gx /= gz
@@ -284,110 +542,18 @@ class TusimpleLane(tf.data.Dataset):
                 gx *= x_scale
                 gy *= y_scale
 
-                if px != -1 and py != -1:
-                    cv2.line(label[laneAnchorIdx], (px, py), (gx, gy), (1))
+                if gx < 0 or gy < 0 or gx >=(x_anchors-2) or gy >= (y_anchors-1):
+                    continue
+
+                # if px != -1 and py != -1:
+                #     cv2.line(label[laneAnchorIdx], (px, py), (gx, gy), (1))
+                #     cv2.line(label[laneAnchorIdx], (x_anchors-1, py), (x_anchors-1, gy), (0))
                 px = gx
                 py = gy
 
-        # check empty column  
-        for laneIdx in range(max_lane_count):
-            check_sum = np.sum(label[laneIdx], axis=1)
 
-            for yIdx in range(len(check_sum)):
-                if check_sum[yIdx] == 0:
-                    xIdx = x_anchors -1
-                    label[laneIdx][yIdx][xIdx] = 1
-                
-
-        return [imgf, label]
-
-
-        # # get param value
-        # image = image.numpy()
-        # label_lanes = label_lanes.numpy()
-        # label_h_samples = label_h_samples.numpy()
-        # net_input_img_size = net_input_img_size.numpy()
-        # x_anchors = x_anchors.numpy()
-        # y_anchors = y_anchors.numpy()
-        # max_lane_count = max_lane_count.numpy()
-
-        
-        # height, width = image.shape[:2]
-        # if width != 1280 or height != 720:
-        #     image = cv2.resize(image, (1280, 720))  
-        # # resized_img = cv2.resize(image, tuple(net_input_img_size))
-        # gImg = cv2.remap(image, TusimpleLane.map_x[refIdx], TusimpleLane.map_y[refIdx], interpolation=cv2.INTER_NEAREST)
-        # imgf = np.asarray(gImg) * (1.0/ 255.0)
-
-
-        # # transform "h_samples" & "lanes" to desired format
-        # label = np.zeros((max_lane_count, y_anchors, x_anchors), dtype=np.int8)
-        # x_scale = (float)(x_anchors) / (float)(TusimpleLane.groundSize[1])
-        # y_scale = (float)(y_anchors) / (float)(TusimpleLane.groundSize[0])
-        # lane_useage = np.zeros(shape=(max_lane_count), dtype=np.int32)
-
-        # for laneIdx in range(min(len(label_lanes), max_lane_count)):
-        #     lane_data = label_lanes[laneIdx]
-            
-        #     ####################################################333
-        #     laneAnchorIdx = 0
-        #     for idx in range(len(lane_data)):
-        #         dy = label_h_samples[idx]
-        #         dx = lane_data[idx]
-
-        #         if dx == -2:
-        #             continue
-
-        #         gx, gy, gz = np.matmul(TusimpleLane.H[refIdx], [[dx], [dy], [1.0]])
-        #         if gz > 0:
-        #             continue
-                
-        #         # conver to anchor coordinate
-        #         gx *= x_scale
-
-        #         laneAnchorIdx = gx / gz
-
-        #     laneAnchorIdx = int((laneAnchorIdx * max_lane_count) / x_anchors)
-
-        #     # discard lanes out of ground.
-        #     # if (laneAnchorIdx < 0):
-        #     #     laneAnchorIdx = 0
-        #     # if (laneAnchorIdx >= max_lane_count):
-        #     #     laneAnchorIdx = max_lane_count -1
-        #     if laneAnchorIdx < 0 or laneAnchorIdx >= max_lane_count:
-        #         continue
-        #     ####################################################
-        #     lane_useage[laneAnchorIdx] += 1
-
-        #     # tf.print("lane_useage ", lane_useage)
-        #     # if lane_useage[laneAnchorIdx] > 0:
-        #     #     print("data alearday used")
-        #     #     sys.exit(0)
-
-        #     px = -1
-        #     py = -1
-        #     for idx in range(len(lane_data)):
-        #         dy = label_h_samples[idx]
-        #         dx = lane_data[idx]
-
-        #         if (dx < 0):
-        #             continue
-
-        #         # roate dx, dy
-        #         gx, gy, gz = np.matmul(TusimpleLane.H[refIdx], [[dx], [dy], [1.0]])
-        #         if gz > 0:
-        #             continue
-        #         gx /= gz
-        #         gy /= gz
-
-        #         # conver to anchor coordinate
-        #         gx *= x_scale
-        #         gy *= y_scale
-
-        #         if px != -1 and py != -1:
-        #             cv2.line(label[laneAnchorIdx], (px, py), (gx, gy), (1))
-        #         px = gx
-        #         py = gy
+        # tf.print("label ", tf.convert_to_tensor(label), summarize=-1)
+        # sys.exit(0)
 
         # # check empty column  
         # for laneIdx in range(max_lane_count):
@@ -399,102 +565,16 @@ class TusimpleLane(tf.data.Dataset):
         #             label[laneIdx][yIdx][xIdx] = 1
                 
 
+        # yield (imgf, [label, slice_confidences])
         # return [imgf, label]
-
-    # ----------------------------------------------------------------------------------------
-    def map_data_read(image, label_lanes, label_h_samples, net_input_img_size, x_anchors, y_anchors, max_lane_count,
-                      augmentation, brightnessValue, saturationsValue, offsetX, offsetY ):
-        # get param value
-        label_lanes = label_lanes.numpy()
-        label_h_samples = label_h_samples.numpy()
-        net_input_img_size = net_input_img_size.numpy()
-        x_anchors = x_anchors.numpy()
-        y_anchors = y_anchors.numpy()
-        max_lane_count = max_lane_count.numpy()
-
         
-        if augmentation:
-            # image = tf.image.adjust_brightness (image, brightnessValue)
-            # image = tf.image.adjust_saturation (image, saturationsValue)
-            coord_transform_matrix = np.array([[1.0, 0.0, offsetX], 
-                                               [0.0, 1.0, offsetY]])
-            image = image.numpy()
-            height, width = image.shape[:2]
-            image = cv2.warpAffine(image, coord_transform_matrix, (width, height))
-        else:
-            coord_transform_matrix = np.array([[1.0, 0.0, 0.0], 
-                                               [0.0, 1.0, 0.0]])
-
-            image = image.numpy()
-            height, width = image.shape[:2]
-
-        inv_w = 1.0 / float(width)
-        inv_h = 1.0 / float(height)
-
-        if augmentation:
-            rotate_matrix = np.array([[1.0, 0.0, random.randrange(-200, 200) * 1.0], 
-                                      [0.0, 1.0, 0.0]])
-            image = cv2.warpAffine(image, rotate_matrix, (width, height) )
-        else:
-            rotate_matrix = np.array([[1.0, 0.0, 0.0], 
-                                      [0.0, 1.0, 0.0]])
-
-        resized_img = cv2.resize(image, tuple(net_input_img_size))
-        ary = np.asarray(resized_img)
-        imgf = ary * (1.0/ 255.0)
-
-        # transform "h_samples" & "lanes" to desired format
-        label = np.zeros((max_lane_count, y_anchors, x_anchors), dtype=np.int8)
-
-        # for laneIdx in range(min(len(label_lanes), max_lane_count)):
-        for laneIdx in range(len(label_lanes)):
-            lane_data = label_lanes[laneIdx]
-
-            
-
-            for idx in range(len(lane_data)):
-                dy = label_h_samples[idx]
-                dx = lane_data[idx]
-
-                # # roate dx, dy
-                if augmentation:
-                    pp = np.array([[dx], [dy], [1]])
-                    pp = np.dot(rotate_matrix, pp)
-                    dx, dy = pp
-                    dx = dx[0]
-                    dy = dy[0]
-                
-
-                # resample
-                if (dx != -2):
-                    xIdx = int((dx * inv_w) * (x_anchors - 2))
-                else:
-                    continue
-
-                if (dy * inv_h) < 0.4:
-                    continue
-                
-                yIdx = int((dy * inv_h) * y_anchors)
-
-                # check laneIdx
-                if (yIdx >= 0 and yIdx < y_anchors and xIdx >=0 and xIdx < x_anchors):
-                    label[laneIdx][yIdx][xIdx] = 1
-                    
-
-        # check empty column  
-        for laneIdx in range(max_lane_count):
-            check_sum = np.sum(label[laneIdx], axis=1)
-
-            for yIdx in range(len(check_sum)):
-                if check_sum[yIdx] == 0:
-                    xIdx = x_anchors -1
-                    label[laneIdx][yIdx][xIdx] = 1
-                
-
-        return [imgf, label]
-
+        return (imgf, label)
+ 
     # ----------------------------------------------------------------------------------------
-    def _data_reader(dataset_path, label_data_name, net_input_img_size, x_anchors, y_anchors, max_lane_count, augmentation):
+    def _data_reader(dataset_path,
+                     label_data_name,
+                     augmentation_deg):
+
         label_data_path = os.path.join(dataset_path, label_data_name)
         if (os.path.exists(label_data_path) == False):
             print("Label file doesn't exist, path : ", label_data_path)
@@ -523,8 +603,11 @@ class TusimpleLane(tf.data.Dataset):
                     break
                 count += 1
 
-                for refIdx in range(len(TusimpleLane.H)):
-                    yield (image_ary, label_lanes, label_h_samples, augmentation, refIdx)
+                if augmentation_deg is None:
+                    yield (image_ary, label_lanes, label_h_samples, 0)
+                else:
+                    for refIdx in range(len(augmentation_deg)):
+                        yield (image_ary, label_lanes, label_h_samples, refIdx)
 
 
                 
