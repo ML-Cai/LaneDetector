@@ -68,43 +68,43 @@ def DiscriminativeLoss_single(y_true,
 
     return loss
 
-def DiscriminativeLoss(instance_feature_dim =3,
-                       delta_v=0.5,
-                       delta_d=1.5,
-                       param_var=1.0,
-                       param_dist=1.0,
-                       param_reg=0.001):
+# def DiscriminativeLoss(instance_feature_dim =3,
+#                        delta_v=0.5,
+#                        delta_d=1.5,
+#                        param_var=1.0,
+#                        param_dist=1.0,
+#                        param_reg=0.001):
 
-    def _DiscriminativeLoss(y_true, y_pred):
-        instance_label_dim = 1
-        y_true_instance = tf.slice(y_true, [0, 0, 0, 3], [-1, -1, -1, instance_label_dim])
-        y_pred_instance = tf.slice(y_pred, [0, 0, 0, 3], [-1, -1, -1, instance_feature_dim])
+#     def _DiscriminativeLoss(y_true, y_pred):
+#         instance_label_dim = 1
+#         y_true_instance = tf.slice(y_true, [0, 0, 0, 3], [-1, -1, -1, instance_label_dim])
+#         y_pred_instance = tf.slice(y_pred, [0, 0, 0, 3], [-1, -1, -1, instance_feature_dim])
 
  
 
-        batch_size = tf.shape(y_pred_instance)[0]
+#         batch_size = tf.shape(y_pred_instance)[0]
 
-        def loop_cond(y_true_instance, y_pred_instance, loss, loopIdx):
-            return tf.less(loopIdx, batch_size)
+#         def loop_cond(y_true_instance, y_pred_instance, loss, loopIdx):
+#             return tf.less(loopIdx, batch_size)
             
-        def loop_body(y_true_instance, y_pred_instance, loss, loopIdx):
-            loss += DiscriminativeLoss_single(y_true_instance[loopIdx],
-                                              y_pred_instance[loopIdx],
-                                              delta_v=delta_v,
-                                              delta_d=delta_d,
-                                              param_var=param_var,
-                                              param_dist=param_dist,
-                                              param_reg=param_reg)
-            return y_true_instance, y_pred_instance, loss, loopIdx +1
+#         def loop_body(y_true_instance, y_pred_instance, loss, loopIdx):
+#             loss += DiscriminativeLoss_single(y_true_instance[loopIdx],
+#                                               y_pred_instance[loopIdx],
+#                                               delta_v=delta_v,
+#                                               delta_d=delta_d,
+#                                               param_var=param_var,
+#                                               param_dist=param_dist,
+#                                               param_reg=param_reg)
+#             return y_true_instance, y_pred_instance, loss, loopIdx +1
         
 
-        loss = 0.0
-        _, _, loss, _ = tf.while_loop(cond=loop_cond,
-                                      body=loop_body,
-                                      loop_vars=[y_true_instance, y_pred_instance, loss, 0])
-        return loss
+#         loss = 0.0
+#         _, _, loss, _ = tf.while_loop(cond=loop_cond,
+#                                       body=loop_body,
+#                                       loop_vars=[y_true_instance, y_pred_instance, loss, 0])
+#         return loss
     
-    return _DiscriminativeLoss
+#     return _DiscriminativeLoss
 
 
 # m = tf.slice(x, [0, i, 0, 0], [-1, 1, -1, x_anchors -1])
@@ -143,41 +143,41 @@ def LaneLoss(coeff = 1.0):
         loss_cls = log_loss(true_cls, pred_cls)
         loss_offset = smooth_L1_loss(true_offset, pred_offset)
 
-        return loss_cls + loss_offset
+        # return loss_cls + loss_offset
 
         ##########################################3
-        # instance_feature_dim =3
-        # delta_v=0.5
-        # delta_d=1.5
-        # param_var=1.0
-        # param_dist=1.0
-        # param_reg=0.001
+        instance_feature_dim =6
+        delta_v=0.3
+        delta_d=1.0
+        param_var=1.0
+        param_dist=10.0
+        param_reg=0.001
 
-        # instance_label_dim = 1
-        # y_true_instance = tf.slice(y_true, [0, 0, 0, 3], [-1, -1, -1, instance_label_dim])
-        # y_pred_instance = tf.slice(y_pred, [0, 0, 0, 3], [-1, -1, -1, instance_feature_dim])
+        instance_label_dim = 1
+        y_true_instance = tf.slice(y_true, [0, 0, 0, 3], [-1, -1, -1, instance_label_dim])
+        y_pred_instance = tf.slice(y_pred, [0, 0, 0, 3], [-1, -1, -1, instance_feature_dim])
 
-        # batch_size = tf.shape(y_pred_instance)[0]
+        batch_size = tf.shape(y_pred_instance)[0]
 
-        # def loop_cond(y_true_instance, y_pred_instance, loss, loopIdx):
-        #     return tf.less(loopIdx, batch_size)
+        def loop_cond(y_true_instance, y_pred_instance, loss, loopIdx):
+            return tf.less(loopIdx, batch_size)
             
-        # def loop_body(y_true_instance, y_pred_instance, loss, loopIdx):
-        #     loss += DiscriminativeLoss_single(y_true_instance[loopIdx],
-        #                                       y_pred_instance[loopIdx],
-        #                                       delta_v=delta_v,
-        #                                       delta_d=delta_d,
-        #                                       param_var=param_var,
-        #                                       param_dist=param_dist,
-        #                                       param_reg=param_reg)
-        #     return y_true_instance, y_pred_instance, loss, loopIdx +1
+        def loop_body(y_true_instance, y_pred_instance, loss, loopIdx):
+            loss += DiscriminativeLoss_single(y_true_instance[loopIdx],
+                                              y_pred_instance[loopIdx],
+                                              delta_v=delta_v,
+                                              delta_d=delta_d,
+                                              param_var=param_var,
+                                              param_dist=param_dist,
+                                              param_reg=param_reg)
+            return y_true_instance, y_pred_instance, loss, loopIdx +1
         
 
-        # loss = 0.0
-        # _, _, loss, _ = tf.while_loop(cond=loop_cond,
-        #                               body=loop_body,
-        #                               loop_vars=[y_true_instance, y_pred_instance, loss, 0])
-        # return (loss_cls + loss_offset) + 0.01 * loss
+        loss = 0.0
+        _, _, loss, _ = tf.while_loop(cond=loop_cond,
+                                      body=loop_body,
+                                      loop_vars=[y_true_instance, y_pred_instance, loss, 0])
+        return (loss_cls + loss_offset) + 0.01 * loss
         ##########################################3
 
 

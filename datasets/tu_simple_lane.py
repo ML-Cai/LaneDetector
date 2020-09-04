@@ -599,9 +599,9 @@ class TusimpleLane(tf.data.Dataset):
                 with Image.open(image_path) as image:
                     image_ary = np.asarray(image)
                 
-                if (count >=32):
-                    break
-                count += 1
+                # if (count >=64):
+                #     break
+                # count += 1
 
                 if augmentation_deg is None:
                     yield (image_ary, label_lanes, label_h_samples, 0)
