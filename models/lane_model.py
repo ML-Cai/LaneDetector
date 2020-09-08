@@ -406,128 +406,222 @@ class PostProcessor(tf.keras.layers.Layer):
     def __init__(self):
         super(PostProcessor, self).__init__()
 
+    def build(self, input_shape):
+        super(PostProcessor, self).build(input_shape)
+
     def call(self, prediction):
         # batch, lane_count, y_anchors, x_anchors = inputs.get_shape().as_list()
         x_cls, x_offset, x_embedding = prediction
 
-        # ==================================================================
-        # post processing
+        
         x_anchors = 32
         y_anchors = 32
         embedding_count = 6
-        # pred_offset = prediction[:,:,:,2:3]
-        # pred_embeddings = prediction[:,:,:,3:]
+        groundSize = (256, 256)
+        inv_anchor_scale_x = (float)(groundSize[1]) / (float)(x_anchors)
+        inv_anchor_scale_y = (float)(groundSize[0]) / (float)(y_anchors) 
+        
+        # ==================================================================
+        # post processing
         pred_offset = x_offset
         pred_embeddings = x_embedding
 
         # do threshold to crop class prob and create a bool mask 
-        PROB_THRESHOLD = 0.5
-        # lane_prob = prediction[:,:,:,0]
         lane_prob = x_cls[:,:,:,0]
+        lane_prob = tf.expand_dims(lane_prob, axis=-1)
+        lane_prob = tf.tile(lane_prob, multiples=[1, 1, 1, embedding_count])
 
-        ##############################################################
-        # lane_prob = tf.clip_by_value(lane_prob, 0.1, 1.0)
+        # inter_data = tf.greater_equal(embeddings, tf.constant([0.5], dtype=tf.float32))
+        # ones = tf.ones(tf.shape(inter_data), dtype=tf.float32)
+        # zeros = tf.zeros(tf.shape(inter_data), dtype=tf.float32)
+        # embeddings = tf.where(inter_data, ones, zeros)
 
-        # threshold_vector = tf.constant([PROB_THRESHOLD], dtype=tf.float32)
-        # lane_prob_mask = tf.greater_equal(lane_prob, threshold_vector)
 
-        # ones = tf.ones(tf.shape(lane_prob_mask), dtype=tf.float32)
-        # zeros = tf.zeros(tf.shape(lane_prob_mask), dtype=tf.float32)
-        # lane_prob_mask = tf.where(lane_prob_mask, ones, zeros)
-
-        ##############################################################
-        # 朝向不要做上面的正規化, 而是直接用prob來削減embeddings
-        lane_prob_mask = lane_prob
-        ##############################################################
-
-        lane_prob_mask = tf.expand_dims(lane_prob_mask, axis=-1)
-        lane_prob_mask = tf.tile(lane_prob_mask, multiples=[1, 1, 1, 6])
-
-        return lane_prob_mask
+        # inter_data = pred_embeddings > 0.5
+        # ones = tf.ones(tf.shape(inter_data), dtype=tf.float32)
+        # zeros = tf.zeros(tf.shape(inter_data), dtype=tf.float32)
+        # embeddings = tf.where(inter_data, ones, zeros)
+        # embeddings = tf.multiply(embeddings, lane_prob)     #[batch, anchor_height, anchor_width, embeddings]
         
-
-        # do threshold to crop embeddings and create a bool mask 
-        PROB_THRESHOLD = 0.5
-        pred_embeddings = tf.clip_by_value(pred_embeddings, PROB_THRESHOLD, 1.0)     # set prob > 0.5 as valid  anchor
-        threshold_vector = tf.constant([PROB_THRESHOLD], dtype=tf.float32)
-        embedding_mask = tf.not_equal(pred_embeddings, threshold_vector)
-        embedding_mask = tf.cast(embedding_mask, tf.float32)    #[batch, anchor_height, anchor_width, mask(0, 1)]
-
-        # remove embeddings by prob mask
-        embeddings = tf.multiply(embedding_mask, lane_prob_mask)     #[batch, anchor_height, anchor_width, embeddings]
-
-
+        # inter_data = pred_embeddings > 0.5
+        # inter_data = tf.cast(inter_data, dtype=tf.float32)
+        # embeddings = tf.multiply(inter_data, lane_prob)     #[batch, anchor_height, anchor_width, embeddings]
+    
+        inter_data = pred_embeddings - 0.5
+        inter_data = tf.nn.relu(inter_data)
+        inter_data *= 2
+        embeddings = tf.multiply(inter_data, lane_prob)
+        
         # create anchor coordinate maps
-        groundSize = (256, 256)
-        inv_anchor_scale_x = (float)(groundSize[1]) / (float)(x_anchors)
-        inv_anchor_scale_y = (float)(groundSize[0]) / (float)(y_anchors) 
-
+        # anchor_x_axis = tf.range(0, 1.0, 1.0/ float(x_anchors), dtype=tf.float32)
         anchor_x_axis = tf.range(0, x_anchors, dtype=tf.float32)
+        anchor_x_axis = tf.multiply(anchor_x_axis, tf.constant([inv_anchor_scale_x], dtype=tf.float32))
         anchor_x_axis = tf.expand_dims(anchor_x_axis, axis=0)
         anchor_x_axis = tf.tile(anchor_x_axis, [y_anchors, 1])
-        anchor_x_axis = tf.multiply(anchor_x_axis, tf.constant(inv_anchor_scale_x, dtype=tf.float32))
         anchor_x_axis = tf.expand_dims(anchor_x_axis, axis=-1)  # expand as same dim as embeddings
         anchor_x_axis = tf.expand_dims(anchor_x_axis, axis=0)   # expand batch
-        anchor_x_axis = tf.tile(anchor_x_axis, multiples=[1, 1, 1, embedding_count])
-        # tf.print("anchor_x_axis ", anchor_x_axis, summarize=-1)
-        # tf.print("anchor_x_axis ", tf.shape(anchor_x_axis))
-
-
-        # filter data by embeddings and  decode offsets by exp
-        offsets = tf.exp(pred_offset)
-        anchor_x_axis = tf.add(anchor_x_axis, offsets) 
-        anchor_x_axis = tf.multiply(embeddings, anchor_x_axis)
-
-        # check the variance of embeddings by row, ideally, we want each row of embeddings containt only one embedding 
-        # to identify instance of lane, but in some case, over one embedding at same row would happened.
-        # In this step, we filter embeddings at each row by the position variance.
-        sum_of_embedding_count_x = tf.reduce_sum(embeddings, axis=2)
-        sum_of_embedding_count_x = tf.clip_by_value(sum_of_embedding_count_x, 1.0, x_anchors)
-        sum_of_axis_x = tf.reduce_sum(anchor_x_axis, axis=2)
-        mean_of_axis_x = tf.divide(sum_of_axis_x, sum_of_embedding_count_x)
-
-        mean_of_axis_x = tf.expand_dims(mean_of_axis_x, axis=2)
-        mean_of_axis_x = tf.tile(mean_of_axis_x, [1, 1, x_anchors, 1])
-        # tf.print("mean_of_axis_x ", tf.shape(mean_of_axis_x))
-        
-        # threshold
-        dpulicated_threshold = 5.0
-        diff_of_axis_x = tf.abs(tf.subtract(anchor_x_axis, mean_of_axis_x))
-        diff_of_axis_x = tf.less_equal(diff_of_axis_x, tf.constant(dpulicated_threshold, dtype=tf.float32))
-
-        ones = tf.ones(tf.shape(diff_of_axis_x))
-        zeros = tf.zeros(tf.shape(diff_of_axis_x))
-        mask_of_mean_offset = tf.where(diff_of_axis_x, ones, zeros)
-
-        embeddings = tf.multiply(mask_of_mean_offset, embeddings)
-        anchor_x_axis = tf.multiply(mask_of_mean_offset, anchor_x_axis)
-
-        # recalcuate average lane markings
-        sum_of_embedding_count_x = tf.reduce_sum(embeddings, axis=2)
-        count_of_valid_point = tf.transpose(sum_of_embedding_count_x, perm=[0, 2, 1])
-        count_of_valid_point = tf.expand_dims(count_of_valid_point, axis=-1)
-        sum_of_embedding_count_x = tf.clip_by_value(sum_of_embedding_count_x, 1.0, x_anchors)
-        sum_of_axis_x = tf.reduce_sum(anchor_x_axis, axis=2)
-        mean_of_axis_x = tf.divide(sum_of_axis_x, sum_of_embedding_count_x)
-        # tf.print("mean_of_axis_x ", tf.shape(mean_of_axis_x))
-
-        mean_of_axis_x = tf.transpose(mean_of_axis_x, perm=[0, 2, 1])   # [batch, height, instance] -> [batch, instance, height]
-        mean_of_axis_x = tf.expand_dims(mean_of_axis_x, axis=-1)
-        
+        # anchor_x_axis = tf.tile(anchor_x_axis, multiples=[1, 1, 1, embedding_count])
+      
         # generate y axis data
+        # anchor_y_axis = tf.range(0, 1.0, 1.0/ float(y_anchors), dtype=tf.float32)
         anchor_y_axis = tf.range(0, y_anchors, dtype=tf.float32)
-        anchor_y_axis = tf.multiply(anchor_y_axis, tf.constant(inv_anchor_scale_y, dtype=tf.float32))
+        anchor_y_axis = tf.multiply(anchor_y_axis, tf.constant([inv_anchor_scale_y], dtype=tf.float32 ))
         anchor_y_axis = tf.expand_dims(anchor_y_axis, axis=-1)
-        anchor_y_axis = tf.expand_dims(anchor_y_axis, axis=0)
-        anchor_y_axis = tf.expand_dims(anchor_y_axis, axis=0)
-        anchor_y_axis = tf.tile(anchor_y_axis, [1, embedding_count, 1, 1])
+        anchor_y_axis = tf.tile(anchor_y_axis, [1, x_anchors])
+        anchor_y_axis = tf.expand_dims(anchor_y_axis, axis=-1)  # expand as same dim as embeddings
+        anchor_y_axis = tf.expand_dims(anchor_y_axis, axis=0)   # expand batch
+        # anchor_y_axis = tf.tile(anchor_y_axis, multiples=[1, 1, 1, embedding_count])
 
+        anchor_axis = tf.concat([anchor_x_axis, anchor_y_axis], axis=-1)
+
+        # filter data by embeddings and decode offsets by exp
+        offsets = tf.exp(pred_offset)
+        # anchor_x_axis = tf.add(anchor_x_axis, offsets) 
+     
         # generate confidence data
-        
-        result = tf.concat([mean_of_axis_x, anchor_y_axis, count_of_valid_point], axis=-1)
+        # result = tf.concat([mean_of_axis_x, anchor_y_axis, count_of_valid_point], axis=-1)
         # result = [mean_of_axis_x, anchor_y_axis, count_of_valid_point]
+        result = [embeddings, offsets, anchor_axis]
 
         return result
+
+    # def call(self, prediction):
+    #     # batch, lane_count, y_anchors, x_anchors = inputs.get_shape().as_list()
+    #     x_cls, x_offset, x_embedding = prediction
+
+    #     # ==================================================================
+    #     # post processing
+    #     x_anchors = 32
+    #     y_anchors = 32
+    #     embedding_count = 6
+    #     # pred_offset = prediction[:,:,:,2:3]
+    #     # pred_embeddings = prediction[:,:,:,3:]
+    #     pred_offset = x_offset
+    #     pred_embeddings = x_embedding
+
+    #     # do threshold to crop class prob and create a bool mask 
+    #     PROB_THRESHOLD = 0.5
+    #     # lane_prob = prediction[:,:,:,0]
+    #     lane_prob = x_cls[:,:,:,0]
+
+    #     ##############################################################
+    #     # lane_prob = tf.clip_by_value(lane_prob, 0.1, 1.0)
+
+    #     # threshold_vector = tf.constant([PROB_THRESHOLD], dtype=tf.float32)
+    #     # lane_prob_mask = tf.greater_equal(lane_prob, threshold_vector)
+
+    #     # ones = tf.ones(tf.shape(lane_prob_mask), dtype=tf.float32)
+    #     # zeros = tf.zeros(tf.shape(lane_prob_mask), dtype=tf.float32)
+    #     # lane_prob_mask = tf.where(lane_prob_mask, ones, zeros)
+
+    #     ##############################################################
+    #     # 朝向不要做上面的正規化, 而是直接用prob來削減embeddings
+    #     # lane_prob_mask = lane_prob
+    #     ##############################################################
+
+    #     # lane_prob_mask = tf.expand_dims(lane_prob_mask, axis=-1)
+    #     # lane_prob_mask = tf.tile(lane_prob_mask, multiples=[1, 1, 1, 6])
+    #     # lane_prob = prediction[:,:,:,0]
+    #     lane_prob_mask = lane_prob
+    #     lane_prob_mask = tf.expand_dims(lane_prob_mask, axis=-1)
+    #     lane_prob_mask = tf.tile(lane_prob_mask, multiples=[1, 1, 1, embedding_count])
+
+
+
+    #     # # do threshold to crop embeddings and create a bool mask 
+    #     # PROB_THRESHOLD = 0.5
+    #     # pred_embeddings = tf.clip_by_value(pred_embeddings, PROB_THRESHOLD, 1.0)     # set prob > 0.5 as valid  anchor
+    #     # threshold_vector = tf.constant([PROB_THRESHOLD], dtype=tf.float32)
+    #     # embedding_mask = tf.not_equal(pred_embeddings, threshold_vector)
+    #     # embedding_mask = tf.cast(embedding_mask, tf.float32)    #[batch, anchor_height, anchor_width, mask(0, 1)]
+
+    #     # # remove embeddings by prob mask
+    #     # embeddings = tf.multiply(embedding_mask, lane_prob_mask)     #[batch, anchor_height, anchor_width, embeddings]
+
+    #     embeddings = tf.multiply(pred_embeddings, lane_prob_mask)     #[batch, anchor_height, anchor_width, embeddings]
+    #     inter_data = tf.greater_equal(embeddings, tf.constant([0.5], dtype=tf.float32))
+    #     ones = tf.ones(tf.shape(inter_data), dtype=tf.float32)
+    #     zeros = tf.zeros(tf.shape(inter_data), dtype=tf.float32)
+    #     embeddings = tf.where(inter_data, ones, zeros)
+
+        
+
+    #     # create anchor coordinate maps
+    #     groundSize = (256, 256)
+    #     inv_anchor_scale_x = (float)(groundSize[1]) / (float)(x_anchors)
+    #     inv_anchor_scale_y = (float)(groundSize[0]) / (float)(y_anchors) 
+
+    #     anchor_x_axis = tf.range(0, x_anchors, dtype=tf.float32)
+    #     anchor_x_axis = tf.expand_dims(anchor_x_axis, axis=0)
+    #     anchor_x_axis = tf.tile(anchor_x_axis, [y_anchors, 1])
+    #     anchor_x_axis = tf.multiply(anchor_x_axis, tf.constant(inv_anchor_scale_x, dtype=tf.float32))
+    #     anchor_x_axis = tf.expand_dims(anchor_x_axis, axis=-1)  # expand as same dim as embeddings
+    #     anchor_x_axis = tf.expand_dims(anchor_x_axis, axis=0)   # expand batch
+    #     anchor_x_axis = tf.tile(anchor_x_axis, multiples=[1, 1, 1, embedding_count])
+    #     # tf.print("anchor_x_axis ", anchor_x_axis, summarize=-1)
+    #     # tf.print("anchor_x_axis ", tf.shape(anchor_x_axis))
+
+
+    #     # filter data by embeddings and  decode offsets by exp
+    #     anchor_x_axis = tf.multiply(embeddings, anchor_x_axis)
+    #     # offsets = tf.exp(pred_offset)
+    #     offsets = pred_offset
+    #     anchor_x_axis = tf.add(anchor_x_axis, offsets) 
+        
+    #     # return anchor_x_axis
+
+    #     # check the variance of embeddings by row, ideally, we want each row of embeddings containt only one embedding 
+    #     # to identify instance of lane, but in some case, over one embedding at same row would happened.
+    #     # In this step, we filter embeddings at each row by the position variance.
+    #     sum_of_embedding_count_x = tf.reduce_sum(embeddings, axis=2)
+    #     sum_of_embedding_count_x = tf.clip_by_value(sum_of_embedding_count_x, 1.0, x_anchors)
+    #     sum_of_axis_x = tf.reduce_sum(anchor_x_axis, axis=2)
+    #     mean_of_axis_x = tf.divide(sum_of_axis_x, sum_of_embedding_count_x)
+
+    #     mean_of_axis_x = tf.expand_dims(mean_of_axis_x, axis=2)
+    #     mean_of_axis_x = tf.tile(mean_of_axis_x, [1, 1, x_anchors, 1])
+    #     # tf.print("mean_of_axis_x ", tf.shape(mean_of_axis_x))
+        
+    #     return mean_of_axis_x
+
+    #     # threshold
+    #     dpulicated_threshold = 5.0
+    #     diff_of_axis_x = tf.abs(tf.subtract(anchor_x_axis, mean_of_axis_x))
+    #     diff_of_axis_x = tf.less_equal(diff_of_axis_x, tf.constant(dpulicated_threshold, dtype=tf.float32))
+
+    #     ones = tf.ones(tf.shape(diff_of_axis_x))
+    #     zeros = tf.zeros(tf.shape(diff_of_axis_x))
+    #     mask_of_mean_offset = tf.where(diff_of_axis_x, ones, zeros)
+
+    #     embeddings = tf.multiply(mask_of_mean_offset, embeddings)
+    #     anchor_x_axis = tf.multiply(mask_of_mean_offset, anchor_x_axis)
+
+    #     # recalcuate average lane markings
+    #     sum_of_embedding_count_x = tf.reduce_sum(embeddings, axis=2)
+    #     count_of_valid_point = tf.transpose(sum_of_embedding_count_x, perm=[0, 2, 1])
+    #     count_of_valid_point = tf.expand_dims(count_of_valid_point, axis=-1)
+    #     sum_of_embedding_count_x = tf.clip_by_value(sum_of_embedding_count_x, 1.0, x_anchors)
+    #     sum_of_axis_x = tf.reduce_sum(anchor_x_axis, axis=2)
+    #     mean_of_axis_x = tf.divide(sum_of_axis_x, sum_of_embedding_count_x)
+    #     # tf.print("mean_of_axis_x ", tf.shape(mean_of_axis_x))
+
+    #     mean_of_axis_x = tf.transpose(mean_of_axis_x, perm=[0, 2, 1])   # [batch, height, instance] -> [batch, instance, height]
+    #     mean_of_axis_x = tf.expand_dims(mean_of_axis_x, axis=-1)
+        
+    #     # generate y axis data
+    #     anchor_y_axis = tf.range(0, y_anchors, dtype=tf.float32)
+    #     anchor_y_axis = tf.multiply(anchor_y_axis, tf.constant(inv_anchor_scale_y, dtype=tf.float32))
+    #     anchor_y_axis = tf.expand_dims(anchor_y_axis, axis=-1)
+    #     anchor_y_axis = tf.expand_dims(anchor_y_axis, axis=0)
+    #     anchor_y_axis = tf.expand_dims(anchor_y_axis, axis=0)
+    #     anchor_y_axis = tf.tile(anchor_y_axis, [1, embedding_count, 1, 1])
+
+    #     # generate confidence data
+        
+    #     result = tf.concat([mean_of_axis_x, anchor_y_axis, count_of_valid_point], axis=-1)
+    #     # result = [mean_of_axis_x, anchor_y_axis, count_of_valid_point]
+
+    #     return result
 
 
 # ---------------------------------------------------
