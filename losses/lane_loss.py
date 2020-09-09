@@ -8,6 +8,7 @@ def DiscriminativeLoss_single(y_true,
                               param_var,
                               param_dist,
                               param_reg):
+    # reference from https://github.com/hq-jiang/instance-segmentation-with-discriminative-loss-tensorflow/blob/master/loss.py
     label_shape = tf.shape(y_true)      # [height, width]
     pred_shape = tf.shape(y_pred)       # [height, width, feature_dim]
     feature_dim = pred_shape[2]
@@ -68,54 +69,16 @@ def DiscriminativeLoss_single(y_true,
 
     return loss
 
-# def DiscriminativeLoss(instance_feature_dim =3,
-#                        delta_v=0.5,
-#                        delta_d=1.5,
-#                        param_var=1.0,
-#                        param_dist=1.0,
-#                        param_reg=0.001):
-
-#     def _DiscriminativeLoss(y_true, y_pred):
-#         instance_label_dim = 1
-#         y_true_instance = tf.slice(y_true, [0, 0, 0, 3], [-1, -1, -1, instance_label_dim])
-#         y_pred_instance = tf.slice(y_pred, [0, 0, 0, 3], [-1, -1, -1, instance_feature_dim])
-
- 
-
-#         batch_size = tf.shape(y_pred_instance)[0]
-
-#         def loop_cond(y_true_instance, y_pred_instance, loss, loopIdx):
-#             return tf.less(loopIdx, batch_size)
-            
-#         def loop_body(y_true_instance, y_pred_instance, loss, loopIdx):
-#             loss += DiscriminativeLoss_single(y_true_instance[loopIdx],
-#                                               y_pred_instance[loopIdx],
-#                                               delta_v=delta_v,
-#                                               delta_d=delta_d,
-#                                               param_var=param_var,
-#                                               param_dist=param_dist,
-#                                               param_reg=param_reg)
-#             return y_true_instance, y_pred_instance, loss, loopIdx +1
-        
-
-#         loss = 0.0
-#         _, _, loss, _ = tf.while_loop(cond=loop_cond,
-#                                       body=loop_body,
-#                                       loop_vars=[y_true_instance, y_pred_instance, loss, 0])
-#         return loss
-    
-#     return _DiscriminativeLoss
-
-
-# m = tf.slice(x, [0, i, 0, 0], [-1, 1, -1, x_anchors -1])
-
 def smooth_L1_loss(y_true, y_pred):
+    # reference from https://github.com/pierluigiferrari/ssd_keras/blob/master/keras_loss_function/keras_ssd_loss.py
     absolute_loss = tf.abs(y_true - y_pred)
     square_loss = 0.5 * (y_true - y_pred)**2
     l1_loss = tf.where(tf.less(absolute_loss, 1.0), square_loss, absolute_loss - 0.5)
     return tf.reduce_sum(l1_loss, axis=-1)
 
+
 def log_loss(y_true, y_pred):
+    # reference from https://github.com/pierluigiferrari/ssd_keras/blob/master/keras_loss_function/keras_ssd_loss.py
     # Make sure that `y_pred` doesn't contain any zeros (which would break the log function)
     y_pred = tf.maximum(y_pred, 1e-15)
     
@@ -125,15 +88,8 @@ def log_loss(y_true, y_pred):
 
 # custom loss test
 def LaneLoss(coeff = 1.0):
-    categoricalCrossentropy = tf.keras.losses.CategoricalCrossentropy()
-
     def _LaneLoss(y_true, y_pred):
-        # tf.print("y_true ", tf.shape(y_true))
-        # tf.print("y_pred ", tf.shape(y_pred))
-        # print("_loss y_pred.get_shape().as_list()", y_pred.get_shape().as_list())
-        # print("_LaneLoss y_true ", tf.shape(y_true), ", y_pred ", y_pred.get_shape())
-        # print("_LaneLoss y_true ", y_true.get_shape().as_list(), ", y_pred ", y_pred.get_shape().as_list())
-        
+
         true_cls = tf.slice(y_true, [0, 0, 0, 0], [-1, -1, -1, 2])
         pred_cls = tf.slice(y_pred, [0, 0, 0, 0], [-1, -1, -1, 2])
 
@@ -143,9 +99,8 @@ def LaneLoss(coeff = 1.0):
         loss_cls = log_loss(true_cls, pred_cls)
         loss_offset = smooth_L1_loss(true_offset, pred_offset)
 
-        # return loss_cls + loss_offset
 
-        ##########################################3
+        # calcuate discriminative loss from embeddings
         instance_feature_dim =6
         delta_v=0.3
         delta_d=1.0
@@ -178,87 +133,5 @@ def LaneLoss(coeff = 1.0):
                                       body=loop_body,
                                       loop_vars=[y_true_instance, y_pred_instance, loss, 0])
         return (loss_cls + loss_offset) + 0.01 * loss
-        ##########################################3
-
 
     return _LaneLoss
-
-# def LaneLoss(coeff = 1.0):
-#     categoricalCrossentropy = tf.keras.losses.CategoricalCrossentropy()
-
-#     def _LaneLoss(y_true, y_pred):
-#         # tf.print("y_true ", tf.shape(y_true))
-#         # tf.print("y_pred ", tf.shape(y_pred))
-#         # print("_loss y_pred.get_shape().as_list()", y_pred.get_shape().as_list())
-#         # print("_LaneLoss y_true ", tf.shape(y_true), ", y_pred ", y_pred.get_shape())
-#         # print("_LaneLoss y_true ", y_true.get_shape().as_list(), ", y_pred ", y_pred.get_shape().as_list())
-        
-#         true_cls = tf.slice(y_true, [0, 0, 0, 0], [-1, -1, -1, 2])
-#         pred_cls = tf.slice(y_pred, [0, 0, 0, 0], [-1, -1, -1, 2])
-
-#         true_offset = tf.slice(y_true, [0, 0, 0, 2], [-1, -1, -1, 1])
-#         pred_offset = tf.slice(y_pred, [0, 0, 0, 2], [-1, -1, -1, 1])
-
-#         loss_cls = log_loss(true_cls, pred_cls)
-#         loss_offset = smooth_L1_loss(true_offset, pred_offset)
-
-#         return loss_cls + loss_offset
-
-#     return _LaneLoss
-
-
-# custom loss test
-def LaneAccuracy(coeff = 1.0):
-    categoricalAccuracy = tf.keras.metrics.CategoricalAccuracy()
-     
-    def _LaneAccuracy(y_true, y_pred):
-        true_cls = tf.slice(y_true, [0, 0, 0, 0], [-1, -1, -1, 2])
-        pred_cls = tf.slice(y_pred, [0, 0, 0, 0], [-1, -1, -1, 2])
-
-        true_offset = tf.slice(y_true, [0, 0, 0, 2], [-1, -1, -1, 1])
-        pred_offset = tf.slice(y_pred, [0, 0, 0, 2], [-1, -1, -1, 1])
-
-
-        acc_cls = categoricalAccuracy(true_cls, pred_cls)
-        
-        return acc_cls
-
-    return _LaneAccuracy
-
-
-
-
-
-def ConfidenceLoss(x_anchors=64):
-    categoricalCrossentropy = tf.keras.losses.CategoricalCrossentropy()
-
-    def _ConfidenceLoss(y_true, y_pred):
-        # tf.print("y_true ", tf.shape(y_true))
-        # tf.print("y_pred ", tf.shape(y_pred)) y_pred  (None, 10, 2)
-        # print("_ConfidenceLoss y_true ", y_true.get_shape(), ", y_pred ", y_pred.get_shape())
-        non_marking = tf.slice(y_true, [0, 0, 0, x_anchors -1], [-1, -1, -1, 1])
-
-        non_marking = tf.reduce_mean(non_marking, axis=(2))
-
-
-        non_marking = tf.reshape(non_marking, shape=(-1, -1, 1))
-
-        y_pred = tf.keras.activations.softmax(y_pred)
-        loss = categoricalCrossentropy(y_pred, y_pred)
-
-        return loss
-
-    return _ConfidenceLoss
-
-def ConfidenceAccuracy(coeff = 1.0):
-    categoricalAccuracy = tf.keras.metrics.CategoricalAccuracy()
-     
-    def _ConfidenceAccuracy(y_true, y_pred):
-        # print("_ConfidenceAccuracy y_true ", y_true.get_shape(), ", y_pred ", y_pred.get_shape())
-        y_pred = tf.keras.activations.softmax(y_pred)
-        acc_label = categoricalAccuracy(y_true, y_pred)
-        
-        return acc_label
-
-    return _ConfidenceAccuracy
-
