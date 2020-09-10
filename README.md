@@ -91,10 +91,10 @@ The goal of post-process step after inferencing is removing the data at rows whe
 ### TF-lite Hexagon Delegate test (Snapdragon 835/Hexagon 682)
 Following image shown the result which run <b>benchmark_model</b> at HTC U11+ (Snapdragon 835/Hexagon 682):
 > ./benchmark_model --graph=model_quant.tflite  --use_hexagon=true
-![](images/benchmark_model_with_op_profiling.png) 
+> ![](images/benchmark_model.png) 
 
 > ./benchmark_model --graph=model_quant.tflite  --use_hexagon=true --enable_op_profiling=true
-![](images/benchmark_model.png) 
+>![](images/benchmark_model_with_op_profiling.png) 
 
 
 ### TODO
