@@ -9,6 +9,7 @@
     - [Training](#training)
     - [TF-Lite model convertion](#tf-lite-model-convertion)
     - [Test the model](#test-the-model)
+    - [TF-lite Hexagon Delegate test (Snapdragon 835/Hexagon 682)](#tf-lite-hexagon-delegate-test-snapdragon-835hexagon-682)
     - [TODO](#todo)
     - [References](#references)
 
@@ -52,31 +53,32 @@ The reasons to do that:
 
 ### Training
 1. We use <b>"TuSimple Lane Detection Challenge"</b> dataset for training, please download dataset from [TuSimple github](https://github.com/TuSimple/tusimple-benchmark/tree/master/doc/lane_detection), and decompress as following directory structure:
-  - ${DatasetsPath}/train_set/
-    - clips/
-    - label_data_0313.json
-    - ...
-  - ${DatasetsPath}/test_set
-    - clips/
-    - test_tasks_0627.json
-    - ...
+     - ${DatasetsPath}/train_set/
+       - clips/
+       - label_data_0313.json
+       - ...
+     - ${DatasetsPath}/test_set
+       - clips/
+       - test_tasks_0627.json
+       - ...
 
 2. Modify the element <b>TuSimple_dataset_path</b> at config.json by your environment, 
 3. run <b>train_tflite.py</b> for training
 
-    > python3 train_tflite.py
+        > python3 train_tflite.py
 
 ### TF-Lite model convertion
 Once the training finish, we must convert model as TF-Lite model for mobile platform. Please run <b>generate_tflite_model.py</b> to convert model, the converted model is named same as element <b>"tflite_model_name"</b> at config.json.
 
-> python3 generate_tflite_model.py
+    > python3 generate_tflite_model.py
 
 <b>Note</b> : Even though tf-2.0 use new convertor(MLIR converter?) as default to convert tf-lite model, but our model will face many problem when convertng, such as convert finish but allocat_tensor error, or double Dequnatize node error. To go through the convertion for learning, i set converter.experimental_new_converter as False at Tensorflow 2.4.0-dev20200815
 
 
 ### Test the model
 <b>test_tflite_model.py</b> is used to load and test converted tf-lite at previous step, this program will inference tf-lite model and rendering the result of inferencing.
-> python3 test_tflite_model.py
+
+    > python3 test_tflite_model.py
 
 The description about Post-processor is shown as following. In default, i set <b>with_post_process</b> as False to disable post-processor and rendering the default output. Enable this flag if you need post-process.
 
@@ -84,6 +86,15 @@ The goal of post-process step after inferencing is removing the data at rows whe
 
 
 ![](images/post_process_at_test.png) 
+
+
+### TF-lite Hexagon Delegate test (Snapdragon 835/Hexagon 682)
+Following image shown the result which run <b>benchmark_model</b> at HTC U11+ (Snapdragon 835/Hexagon 682):
+> ./benchmark_model --graph=model_quant.tflite  --use_hexagon=true
+![](images/benchmark_model_with_op_profiling.png) 
+
+> ./benchmark_model --graph=model_quant.tflite  --use_hexagon=true --enable_op_profiling=true
+![](images/benchmark_model.png) 
 
 
 ### TODO
