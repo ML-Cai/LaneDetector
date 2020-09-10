@@ -12,7 +12,7 @@ import math
 # --------------------------------------------------------------------------------------------------------------
 def tflite_image_test(tflite_model_quant_file,
                       dataset,
-                      with_post_process=True):
+                      with_post_process=False):
     # load model from saved model
     interpreter = tf.lite.Interpreter(model_path=str(tflite_model_quant_file))
     interpreter.allocate_tensors()
@@ -41,8 +41,6 @@ def tflite_image_test(tflite_model_quant_file,
         # inference
         interpreter.set_tensor(input_index["index"], test_img)
         interpreter.invoke()
-        prediction = interpreter.get_tensor(interpreter.get_output_details()[0]["index"])
-        prediction = tf.convert_to_tensor(prediction)
 
         instance = interpreter.get_tensor(output_index_instance["index"])
         offsets = interpreter.get_tensor(output_index_offsets["index"])
@@ -188,4 +186,4 @@ if __name__ == '__main__':
     print("Load model as TF-Lite and test")
     print("---------------------------------------------------")
     tflite_image_test(tflite_model_name, valid_batches)
-    
+   

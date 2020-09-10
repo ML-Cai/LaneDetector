@@ -1,4 +1,6 @@
 {
+    "TuSimple_dataset_path" : "/home/dana/Datasets/ML/TuSimple/",
+
     "perspective_info" : {
         "image_size" : [1280, 720],
         "image_p0" : [501, 362],

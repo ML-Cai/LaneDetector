@@ -228,12 +228,12 @@ class CoordinateChannel2D(_CoordinateChannel):
 
 
 # ---------------------------------------------------
-class PostProcessor(tf.keras.layers.Layer):
+class OutputMuxer(tf.keras.layers.Layer):
     def __init__(self):
-        super(PostProcessor, self).__init__()
+        super(OutputMuxer, self).__init__()
 
     def build(self, input_shape):
-        super(PostProcessor, self).build(input_shape)
+        super(OutputMuxer, self).build(input_shape)
 
     def call(self, prediction):
         # batch, lane_count, y_anchors, x_anchors = inputs.get_shape().as_list()
@@ -296,7 +296,8 @@ def AlphaLaneModel(net_input_img_size,
                    y_anchors,
                    name='',
                    training=True,
-                   input_batch_size=None):
+                   input_batch_size=None,
+                   output_as_raw_data=False):
 
     input = tf.keras.Input(name='input', shape=(net_input_img_size[1], net_input_img_size[0], 3), batch_size=input_batch_size)
     x = input
@@ -447,8 +448,13 @@ def AlphaLaneModel(net_input_img_size,
         x = tf.keras.layers.Concatenate()([x_cls, x_offset, x_embedding])
         output = x
     else:
-        # do post-process
-        x = PostProcessor()([x_cls, x_offset, x_embedding])
+        if output_as_raw_data:
+            # use following output for raw data visualization
+            x = [x_cls, x_offset, x_embedding]
+        else:
+            # do OutputMuxer to re-arrange output
+            x = OutputMuxer()([x_cls, x_offset, x_embedding])
+
         output = x
 
     return  tf.keras.Model(input, output, name=name)

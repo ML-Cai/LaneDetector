@@ -54,10 +54,8 @@ if __name__ == '__main__':
     valid_batches = datasets.TusimpleLane(test_dataset_path, test_label_set, config, augmentation=False)
     valid_batches = valid_batches.batch(1)
 
-
-    # tflite_model_name = 'model_int8.tflite'
-    # tflite_image_test(tflite_model_name, valid_batches, with_post_process=True)
-
+    
+    # create model and load weights
     model = AlphaLaneModel(net_input_img_size, x_anchors, y_anchors,
                            training=False,
                            name='AlphaLaneNet',
