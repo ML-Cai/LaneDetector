@@ -1,0 +1,28 @@
+{
+    "TuSimple_dataset_path" : "C:\\Users\\bensc\\Projects\\LaneDetector\\datasets\\1280x960_original_task_bags 2023_10-2024_01_10_19_13_48",
+
+    "perspective_info" : {
+        "image_size" : [1280, 960],
+        "image_p0" : [500, 100],
+        "image_p1" : [300, 100],
+        "image_p2" : [0, 500],
+        "image_p3" : [800, 500],
+        "ground_p0" : [958, 1143],
+        "ground_p1" : [1086, 1143],
+        "ground_p2" : [958, 1270],
+        "ground_p3" : [1086, 1270],
+        "matrix_path" : "add_ins/perspective_matrix.pkl"
+    },
+
+    "model_info" : {
+        "input_image_size" : [256, 256],
+        "ground_scale_width" : 0.16,
+        "ground_scale_height" : 0.1,
+        "x_anchors" : 32,
+        "y_anchors" : 32,
+        "max_lane_count" : 3,
+        "checkpoint_path": "tmp/perspective-checkpoint/",
+        "tflite_model_name" : "model_quant.tflite"
+    }
+
+}
