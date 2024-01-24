@@ -7,15 +7,14 @@ import itertools
 import random
 import numpy as np
 import math
-import tensorflow as tf
 from PIL import Image
-from cv2 import cv2
+import cv2
 from scipy.interpolate import interp1d
 
-class TusimpleLane(tf.data.Dataset):
+class TusimpleLane:
 
 
-    def create_map(config,
+    def create_map(self, config,
                    augmentation_deg=None):
         
         src_img_size    = config["perspective_info"]["image_size"]
@@ -41,9 +40,9 @@ class TusimpleLane(tf.data.Dataset):
         # at dataset must have same size, or the perspective transormation may fail.
         # In default, we assume the camera image input size is 1280x720, so the following
         # step will resize the image point for size fitting.
-        for i in range(len(imgP)):
-            imgP[i][0] *= w / 1280.0
-            imgP[i][1] *= h / 720.0
+        # for i in range(len(imgP)):
+        #     imgP[i][0] *= w / 1280.0
+        #     imgP[i][1] *= h / 720.0
 
         # Scale the ground points, we assume the camera position is center of perspectived image, 
         # as shown at following codes :
@@ -61,9 +60,9 @@ class TusimpleLane(tf.data.Dataset):
         #     # -x ----------C------------+x #
         #     ################################
         #
-        for i in range(len(groundP)):
-            groundP[i][0] = groundP[i][0] * ground_scale_width + gw / 2.0
-            groundP[i][1] = gh - groundP[i][1] * ground_scale_height
+        # for i in range(len(groundP)):
+        #     groundP[i][0] = groundP[i][0] * ground_scale_width + gw / 2.0
+        #     groundP[i][1] = gh - groundP[i][1] * ground_scale_height
 
         
         list_H = []
@@ -107,7 +106,7 @@ class TusimpleLane(tf.data.Dataset):
         return list_H, list_map_x, list_map_y
 
     # ----------------------------------------------------------------------------------------
-    def __new__(self,
+    def __init__(self,
                 dataset_path,
                 label_set,
                 config,
@@ -136,27 +135,43 @@ class TusimpleLane(tf.data.Dataset):
         map_x_list = tf.constant(map_x_list)
         map_y_list = tf.constant(map_y_list)
 
+        pipe = [tf.data.Dataset.from_tensors(i) for i in self._data_reader(dataset_path, label_set[0], augmentation_deg)][0]
+        # print(list(pipe.as_numpy_iterator()))
+        # pipe = tf.data.Dataset.from_tensor_slices(pipe.as_numpy_iterator(), "CVAT")
+        # pipe = tf.data.Dataset.from_generator(self._data_reader,
+        #                                        output_types=(tf.dtypes.uint8,
+        #                                                      tf.dtypes.int32,
+        #                                                      tf.dtypes.int32,
+        #                                                      tf.dtypes.int32),
+        #                                        output_shapes=((None),
+        #                                                       (None),
+        #                                                       (None),
+        #                                                       (None)),
+        #                                        args=(dataset_path,
+        #                                              label_set[0],
+        #                                              augmentation_deg)
+        #                                        )
         # build dataset
-        label_set = tf.data.Dataset.from_tensor_slices(label_set)
-        pipe = label_set.interleave(
-            lambda label_file_name: tf.data.Dataset.from_generator(self._data_reader,
-                                               output_types=(tf.dtypes.uint8,
-                                                             tf.dtypes.int32,
-                                                             tf.dtypes.int32,
-                                                             tf.dtypes.int32),
-                                               output_shapes=((None),
-                                                              (None),
-                                                              (None),
-                                                              (None)),
-                                               args=(dataset_path,
-                                                     label_file_name,
-                                                     augmentation_deg)
-                                               )
-            )
-
+        # label_set = tf.data.Dataset.from_tensor_slices(label_set)
+        # pipe = label_set.interleave(
+        #     lambda label_file_name: tf.data.Dataset.from_generator(self._data_reader,
+        #                                        output_types=(tf.dtypes.uint8,
+        #                                                      tf.dtypes.int32,
+        #                                                      tf.dtypes.int32,
+        #                                                      tf.dtypes.int32),
+        #                                        output_shapes=(None,
+        #                                                       None,
+        #                                                       None,
+        #                                                       None),
+        #                                        args=(dataset_path,
+        #                                              label_file_name,
+        #                                              augmentation_deg)
+        #                                        )
+        #     )
+        #
         pipe = pipe.map (
                 # convert data to training label and norimalization
-                lambda image, label_lanes, label_h_samples, refIdx : 
+                lambda image, label_lanes, label_h_samples, refIdx :
                     tf.numpy_function(func=self._map_projection_data_generator,
                                    inp=[image,
                                         label_lanes,
@@ -178,11 +193,14 @@ class TusimpleLane(tf.data.Dataset):
         pipe = pipe.prefetch(  # Overlap producer and consumer works
                 tf.data.experimental.AUTOTUNE
             )
-                
-        return pipe
+        self.pipe = pipe
+
+
+    def get_pipe(self):
+        return self.pipe
 
     # ----------------------------------------------------------------------------------------
-    def _map_projection_data_generator(src_image,
+    def _map_projection_data_generator(self, src_image,
                                          label_lanes,
                                          label_h_samples, 
                                          net_input_img_size,
@@ -310,13 +328,13 @@ class TusimpleLane(tf.data.Dataset):
                     prev_ax = ax
                     prev_ay = ay
 
-        return (imgf, label)
+        return imgf, label
 
     # ----------------------------------------------------------------------------------------
-    def _data_reader(dataset_path,
+    def _data_reader(self, dataset_path,
                      label_data_name,
                      augmentation_deg):
-
+        print("Load data from ", dataset_path, label_data_name)
         label_data_path = os.path.join(dataset_path, label_data_name)
         if (os.path.exists(label_data_path) == False):
             print("Label file doesn't exist, path : ", label_data_path)
@@ -328,7 +346,7 @@ class TusimpleLane(tf.data.Dataset):
         with open(label_data_path, 'r') as reader:
             for line in reader.readlines():
                 raw_label = json.loads(line)
-                image_path = os.path.join(str(dataset_path, "utf-8"), raw_label["raw_file"])
+                image_path = os.path.join(str(dataset_path), raw_label["raw_file"])
                 label_lanes = raw_label["lanes"]
                 label_h_samples = raw_label["h_samples"]
 

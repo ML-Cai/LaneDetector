@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 import datetime
 import json
-from cv2 import cv2
+import cv2
 import datasets
 from models import AlphaLaneModel
 from losses import LaneLoss
@@ -14,7 +14,7 @@ from losses import LaneLoss
 # --------------------------------------------------------------------------------------------------
 if __name__ == '__main__':
     # read configs
-    with open('config.json', 'r') as inf:
+    with open('add_ins/cvat_config2.json', 'r') as inf:
         config = json.load(inf)
     
     net_input_img_size  = config["model_info"]["input_image_size"]
@@ -25,26 +25,32 @@ if __name__ == '__main__':
     
 
     # enable memory growth to prevent out of memory when training
-    physical_devices = tf.config.experimental.list_physical_devices('GPU')
+    physical_devices = tf.config.list_physical_devices('GPU')
     assert len(physical_devices) > 0, "Not enough GPU hardware devices available"
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
 
     # set path of training data
-    train_dataset_path = "/home/dana/Datasets/ML/TuSimple/train_set"
-    train_label_set = ["label_data_0313.json",
+    train_dataset_path = "/mnt/c/Users/inf21034/source/IMG_ROOTS/1280x960_CVATROOT/train_set/"
+    # "/mnt/c/Users/inf21034/source/IMG_ROOTS/TUSIMPLEROOT/TUSimple"
+    #
+    train_label_set = ["train_set.json"]
+    """["label_data_0313.json",
                        "label_data_0531.json",
-                       "label_data_0601.json"]
-    test_dataset_path = "/home/dana/Datasets/ML/TuSimple/test_set"
-    test_label_set = ["test_label.json"]
+                       "label_data_0601.json"]"""
+    test_dataset_path = "/mnt/c/Users/inf21034/source/IMG_ROOTS/1280x960_CVATROOT/test_set/"
+    # "/mnt/c/Users/inf21034/source/IMG_ROOTS/TUSIMPLEROOT/TUSimple"
+    #
+    test_label_set = ["test_set.json"]
 
     # create dataset
     augmentation = True
     batch_size=32
-    train_batches = datasets.TusimpleLane(train_dataset_path, train_label_set, config, augmentation=augmentation)
+    train_batches = datasets.TusimpleLane(train_dataset_path, train_label_set, config, augmentation=augmentation).get_pipe()
     train_batches = train_batches.shuffle(1000).batch(batch_size)
+    print("Training batches: ", list(train_batches.as_numpy_iterator()))
 
-    valid_batches = datasets.TusimpleLane(test_dataset_path, test_label_set, config, augmentation=False)
+    valid_batches = datasets.TusimpleLane(test_dataset_path, test_label_set, config, augmentation=False).get_pipe()
     valid_batches = valid_batches.batch(1)
 
 
@@ -53,7 +59,7 @@ if __name__ == '__main__':
                            training=True,
                            name='AlphaLaneNet',
                            input_batch_size=batch_size)
-    model.summary()
+    # model.summary()
 
     # Enable to load weights from previous training.
     # model.load_weights(tf.train.latest_checkpoint(checkpoint_path))     # load p/retrained
