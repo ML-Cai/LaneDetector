@@ -48,14 +48,18 @@ if __name__ == '__main__':
     # create dataset
     augmentation = True
     batch_size=32
-    train_batches = tfds.load('cvat_dataset', split='train', shuffle_files=True, as_supervised=True)
+    train_batches = tfds.load('cvat_dataset',
+                              split='train',
+                              shuffle_files=True,
+                              as_supervised=True,
+                              batch_size=batch_size)
     train_batches = train_batches.prefetch(tf.data.experimental.AUTOTUNE)
         # datasets.TusimpleLane(train_dataset_path, train_label_set, config, augmentation=augmentation).get_pipe()
-    train_batches = train_batches.shuffle(1000).batch(batch_size)
+    # train_batches = train_batches.shuffle(1000).batch(batch_size)
     # print("Training batches: ", list(train_batches.as_numpy_iterator()))
 
     valid_batches = tfds.load('cvat_dataset', split='test', shuffle_files=True, as_supervised=True)
-    valid_batches = valid_batches.prefetch(tf.data.experimental.AUTOTUNE)
+    # valid_batches = valid_batches.prefetch(tf.data.experimental.AUTOTUNE)
         # datasets.TusimpleLane(test_dataset_path, test_label_set, config, augmentation=False).get_pipe()
     valid_batches = valid_batches.batch(1)
 

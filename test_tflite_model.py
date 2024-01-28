@@ -188,5 +188,5 @@ if __name__ == '__main__':
     print("---------------------------------------------------")
     print("Load model as TF-Lite and test")
     print("---------------------------------------------------")
-    tflite_image_test(tflite_model_name, valid_batches)
+    tflite_image_test(tflite_model_name, valid_batches, True)
    

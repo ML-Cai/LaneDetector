@@ -7,10 +7,10 @@
         "image_p1" : [757, 331],
         "image_p2" : [545, 335],
         "image_p3" : [569, 288],
-        "ground_p0" : [532, 616],
-        "ground_p1" : [532, 833],
-        "ground_p2" : [748, 833],
-        "ground_p3" : [748, 616],
+        "ground_p0" : [748, 616],
+        "ground_p1" : [748, 833],
+        "ground_p2" : [532, 833],
+        "ground_p3" : [532, 616],
         "matrix_path" : "add_ins/perspective_matrix.pkl"
     },
 

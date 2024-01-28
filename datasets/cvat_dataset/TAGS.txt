@@ -1,0 +1,7 @@
+content.data-type.image # Contains image data.
+content.data-type.text # Contains text data.
+ml.task.anomaly-detection # Relates to Anomaly Detection, a machine learning task.
+ml.task.fine-grained-image-classification # Relates to Fine Grained Image Classification, a machine learning task.
+ml.task.image-classification # Relates to Image Classification, a machine learning task.
+ml.task.image-segmentation # Relates to Image Segmentation, a machine learning task.
+
