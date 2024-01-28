@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 import numpy as np
 import json
-from cv2 import cv2
+import cv2
 import datasets
 import math
 from models import AlphaLaneModel
@@ -160,7 +160,7 @@ def output_visualization(config,
         # axarr[2].imshow(embedding_vis)
         # plt.show()
         plt.figure(figsize = (8,8))
-        plt.imshow(main_img)
+        plt.imshow(embedding_vis)
         plt.show()
         
 
@@ -183,23 +183,24 @@ if __name__ == '__main__':
         sys.exit(0)
 
     # enable memory growth to prevent out of memory when training
-    physical_devices = tf.config.experimental.list_physical_devices('GPU')
-    assert len(physical_devices) > 0, "Not enough GPU hardware devices available"
-    tf.config.experimental.set_memory_growth(physical_devices[0], True)
+    # physical_devices = tf.config.experimental.list_physical_devices('GPU')
+    # assert len(physical_devices) > 0, "Not enough GPU hardware devices available"
+    # tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
 
     # set path of training data
-    train_dataset_path = "/home/dana/Datasets/ML/TuSimple/train_set"
-    train_label_set = ["label_data_0313.json",
+    train_dataset_path = "/mnt/c/Users/inf21034/source/IMG_ROOTS/1280x960_CVATROOT/train_set"
+    train_label_set = ["train_set.json"]
+    """["label_data_0313.json",
                        "label_data_0531.json",
-                       "label_data_0601.json"]
-    test_dataset_path = "/home/dana/Datasets/ML/TuSimple/test_set"
-    test_label_set = ["test_label.json"]
+                       "label_data_0601.json"]"""
+    test_dataset_path = "/mnt/c/Users/inf21034/source/IMG_ROOTS/1280x960_CVATROOT/test_set"
+    test_label_set = ["test_set.json"]
 
     valid_batches = datasets.TusimpleLane(test_dataset_path,
                                           test_label_set, 
                                           config,
-                                          augmentation=False)
+                                          augmentation=False).get_pipe()
     valid_batches = valid_batches.batch(1)
 
     # create model and load weights

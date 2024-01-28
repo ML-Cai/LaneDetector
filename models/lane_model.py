@@ -160,26 +160,28 @@ class _CoordinateChannel(tf.keras.layers.Layer):
         self.built = True
 
     def call(self, inputs, training=None, mask=None):
-        input_shape = inputs.get_shape()
+        input_shape = tf.shape(inputs)
+        # input_shape = inputs.get_shape()
+
         # input_shape = tf.shape(inputs)  # training
 
         if self.rank == 2:
             input_shape = [input_shape[i] for i in range(4)]
             batch_size, H, W, C = input_shape
 
-            xx_channels = tf.range(0.0, float(W), dtype=tf.float32)
+            xx_channels = tf.range(0.0, tf.cast(W, tf.float32), dtype=tf.float32)
             xx_channels = tf.expand_dims(xx_channels, axis=0)
             xx_channels = tf.tile(xx_channels, [H, 1])
-            xx_channels = xx_channels / (float(W) - 1.0)
+            xx_channels = xx_channels / (tf.cast(W, tf.float32) - 1.0)
             xx_channels = (xx_channels * 2.0) - 1.0
             xx_channels = tf.expand_dims(xx_channels, axis=0)
             xx_channels = tf.expand_dims(xx_channels, axis=-1)
             xx_channels = tf.tile(xx_channels, [batch_size, 1, 1, 1])
                         
-            yy_channels = tf.range(0.0, float(W), dtype=tf.float32)
+            yy_channels = tf.range(0.0, tf.cast(W, tf.float32), dtype=tf.float32)
             yy_channels = tf.expand_dims(yy_channels, axis=1)
             yy_channels = tf.tile(yy_channels, [1, W])
-            yy_channels = yy_channels / (float(H) - 1.0)
+            yy_channels = yy_channels / (tf.cast(H, tf.float32) - 1.0)
             yy_channels = yy_channels * 2.0 -1.0
             yy_channels = tf.expand_dims(yy_channels, axis=0)
             yy_channels = tf.expand_dims(yy_channels, axis=-1)
@@ -297,9 +299,9 @@ def AlphaLaneModel(net_input_img_size,
                    name='',
                    training=True,
                    input_batch_size=None,
-                   output_as_raw_data=False):
-
-    input = tf.keras.Input(name='input', shape=(net_input_img_size[1], net_input_img_size[0], 3), batch_size=input_batch_size)
+                   output_as_raw_data=False) -> tf.keras.Model:
+                                # input (net_input_img_size[1], net_input_img_size[0], 3)
+    input = tf.keras.Input(name='image', shape=(net_input_img_size[1], net_input_img_size[0], 3), batch_size=input_batch_size)
     x = input
 
 
