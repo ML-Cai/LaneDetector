@@ -10,13 +10,17 @@ import datasets
 import math
 import datasets.cvat_dataset
 import tensorflow_datasets as tfds
+from datasets import TusimpleLane
 
 # --------------------------------------------------------------------------------------------------------------
 def tflite_image_test(tflite_model_quant_file,
                       dataset,
                       with_post_process=False):
     # load model from saved model
-    interpreter = tf.lite.Interpreter(model_path=str(tflite_model_quant_file))
+    interpreter = tf.lite.Interpreter(model_path=str(tflite_model_quant_file),
+                                      experimental_delegates=[tf.lite.experimental.load_delegate(
+                                          "edgetpu.dll")]
+                                      )
     interpreter.allocate_tensors()
 
     # get index of inputs and outputs
@@ -33,7 +37,7 @@ def tflite_image_test(tflite_model_quant_file,
     COLORS = [(0, 0, 255), (0, 255, 0), (255, 0, 0), 
               (0, 255, 255), (255, 0, 255), (255, 255, 0) ]
 
-    for elem in dataset:
+    for k, elem in enumerate(dataset):
         test_img = elem[0]
         test_label = elem[1]
 
@@ -140,9 +144,10 @@ def tflite_image_test(tflite_model_quant_file,
                 cv2.line(main_img, (int(px), 0), (int(px), target_szie[1]), (125, 125, 125))
                 cv2.line(main_img, (0, int(py)), (target_szie[0], int(py)), (125, 125, 125))
 
-        plt.figure(figsize = (8,8))
-        plt.imshow(main_img)
-        plt.show()
+        cv2.imwrite(f"images/outpt_imgs/frame{k:03d}.jpg", main_img)
+        # plt.figure(figsize = (8,8))
+        # plt.imshow(main_img)
+        # plt.show()
 
 
 # --------------------------------------------------------------------------------------------------
@@ -175,7 +180,7 @@ if __name__ == '__main__':
     """["label_data_0313.json",
                        "label_data_0531.json",
                        "label_data_0601.json"]"""
-    test_dataset_path = "/mnt/c/Users/inf21034/source/IMG_ROOTS/1280x960_CVATROOT/test_set"
+    test_dataset_path = "C:/Users/inf21034/source/IMG_ROOTS/1280x960_CVATROOT/test_set"
     test_label_set = ["test_set.json"]
 
     # valid_batches = datasets.TusimpleLane(test_dataset_path,
@@ -183,6 +188,8 @@ if __name__ == '__main__':
     #                                       config,
     #                                       augmentation=False).get_pipe()
     valid_batches = tfds.load('cvat_dataset', split='test', shuffle_files=True, as_supervised=True)
+    # TusimpleLane(test_dataset_path, test_label_set, config).get_pipe()
+    #tfds.load('cvat_dataset', split='test', shuffle_files=True, as_supervised=True)
     valid_batches = valid_batches.batch(1)
 
     print("---------------------------------------------------")

@@ -9,6 +9,7 @@ import sys
 import cv2
 import os
 import math
+import matplotlib.pyplot as plt
 
 cnt_unique = 0
 
@@ -16,9 +17,9 @@ cnt_unique = 0
 class Builder(tfds.core.GeneratorBasedBuilder):
     """DatasetBuilder for cvat_dataset dataset."""
 
-    VERSION = tfds.core.Version('1.3.0')
+    VERSION = tfds.core.Version('1.4.1')
     RELEASE_NOTES = {
-        '1.3.0': 'BEV fixed',
+        '1.4.1': 'Updated Matrices',
     }
 
     def _info(self) -> tfds.core.DatasetInfo:
@@ -60,18 +61,22 @@ class Builder(tfds.core.GeneratorBasedBuilder):
         y_anchors = config["model_info"]["y_anchors"]
         max_lane_count = config["model_info"]["max_lane_count"]
         ground_img_size = config["model_info"]["input_image_size"]
+        dates = list(config["perspective_info"].keys())
+        perspective_infos = {}
+        for date in dates:
+            H_list, map_x_list, map_y_list = create_map(config, date, augmentation_deg=augmentation_deg)
+            H_list = tf.constant(H_list)
+            map_x_list = tf.constant(map_x_list)
+            map_y_list = tf.constant(map_y_list)
+            perspective_infos[date] = (H_list, map_x_list, map_y_list)
 
-        H_list, map_x_list, map_y_list = create_map(config,
-                                                    augmentation_deg=augmentation_deg)
-        H_list = tf.constant(H_list)
-        map_x_list = tf.constant(map_x_list)
-        map_y_list = tf.constant(map_y_list)
 
-        for image_ary, label_lanes, label_h_samples, refIdx in _data_reader(path, label_data_name,
+        for image_ary, label_lanes, label_h_samples, refIdx, day_of_recording in _data_reader(path, label_data_name,
                                                                             augmentation_deg):
             # Generate a unique key for each example
             key = cnt_unique
             cnt_unique += 1
+            H_list, map_x_list, map_y_list = perspective_infos[day_of_recording]
             img, label = _map_projection_data_generator(image_ary,
                                                         label_lanes,
                                                         label_h_samples,
@@ -111,6 +116,7 @@ def _data_reader(dataset_path,
         for line in reader.readlines():
             raw_label = json.loads(line)
             image_path = os.path.join(str(dataset_path), raw_label["raw_file"])
+            day_of_recording = raw_label["raw_file"][0:10]
             label_lanes = raw_label["lanes"]
             label_h_samples = raw_label["h_samples"]
 
@@ -124,29 +130,33 @@ def _data_reader(dataset_path,
             count += 1
 
             if augmentation_deg is None:
-                yield image_ary, label_lanes, label_h_samples, 0
+                yield image_ary, label_lanes, label_h_samples, 0, day_of_recording
             else:
                 for refIdx in range(len(augmentation_deg)):
-                    yield image_ary, label_lanes, label_h_samples, refIdx
+                    yield image_ary, label_lanes, label_h_samples, refIdx, day_of_recording
 
 
-def create_map(config,
+def create_map(config, day_of_recording: str,
                augmentation_deg=None):
-    src_img_size = config["perspective_info"]["image_size"]
+    transformation_settings = config["perspective_info"].get(day_of_recording, None)
+    if transformation_settings is None:
+        print("No transformation settings found for day of recording: ", day_of_recording, file=sys.stderr)
+        return None
+    src_img_size = transformation_settings["image_size"]
     ground_size = config["model_info"]["input_image_size"]
 
     w, h = src_img_size
     gw, gh = ground_size
 
     # calc homography (TuSimple fake)
-    imgP = [config["perspective_info"]["image_p0"],
-            config["perspective_info"]["image_p1"],
-            config["perspective_info"]["image_p2"],
-            config["perspective_info"]["image_p3"]]
-    groundP = [config["perspective_info"]["ground_p0"],
-               config["perspective_info"]["ground_p1"],
-               config["perspective_info"]["ground_p2"],
-               config["perspective_info"]["ground_p3"]]
+    imgP = [transformation_settings["image_p0"],
+            transformation_settings["image_p1"],
+            transformation_settings["image_p2"],
+            transformation_settings["image_p3"]]
+    groundP = [transformation_settings["ground_p0"],
+               transformation_settings["ground_p1"],
+               transformation_settings["ground_p2"],
+               transformation_settings["ground_p3"]]
     ground_scale_width = config["model_info"]["ground_scale_width"]
     ground_scale_height = config["model_info"]["ground_scale_height"]
 
@@ -233,10 +243,29 @@ def _map_projection_data_generator(src_image,
     # height, width = src_image.shape[:2]
     # if width != 1280 or height != 720:
     #     src_image = cv2.resize(src_image, (1280, 720))
+    src_img_cpy = src_image.copy()
+    for l in label_lanes:
+        for sz in range(len(label_h_samples)):
+            cv2.circle(src_img_cpy, (int(l[sz]), int(label_h_samples[sz])), 2, (0, 255, 0), -1)
 
     gImg = cv2.remap(src_image, np.array(map_x), np.array(map_y),
                      interpolation=cv2.INTER_NEAREST,
                      borderValue=(125, 125, 125))
+
+    gImg = gImg[100:-1, 30:-30]
+    gImg = cv2.resize(gImg, (net_input_img_size[1], net_input_img_size[0]))
+
+    #################################
+    height, width = gImg.shape[:2]
+    grid_size = 32
+    for x in range(0, width, width // grid_size):
+        cv2.line(gImg, (x, 0), (x, height), (255, 0, 0), 1)  # Blue lines
+
+    for y in range(0, height, height // grid_size):
+        cv2.line(gImg, (0, y), (width, y), (255, 0, 0), 1)  # Blue lines
+
+    #################################
+
     imgf = np.float32(gImg) * (1.0 / 255.0)
     # cv2.imwrite("test.jpg", gImg)
 
@@ -284,12 +313,17 @@ def _map_projection_data_generator(src_image,
 
             # do perspective transform at dx, dy
             gx, gy, gz = np.matmul(H, [[dx], [dy], [1.0]])
-            if gz > 0:
+            if gz == 0:
                 continue
 
             # conver to anchor coordinate(grid)
             gx = int(gx / gz)
             gy = int(gy / gz)
+            resized = _resize_transformed_labels((gx, gy), net_input_img_size, (30, -30, 100, -1))
+            if resized is None:
+                continue
+            gx, gy = resized
+            cv2.circle(gImg, (int(gx), int(gy)), 2, (0, 255, 0), -1)
             if gx < 0 or gy < 0 or gx >= (groundSize[1] - 1) or gy >= (groundSize[0] - 1):
                 continue
 
@@ -345,3 +379,27 @@ def _map_projection_data_generator(src_image,
                 prev_ay = ay
 
     return imgf, label
+
+
+def _resize_transformed_labels(label, image_shape, cutoffs):
+    height, width = image_shape[:2]
+    x_l_cutoff, x_r_cutoff, y_u_cutoff, y_d_cutoff = cutoffs
+    if x_l_cutoff:
+        if label[0] > x_l_cutoff:
+            label = (label[0] - x_l_cutoff, label[1])
+        else:
+            return None
+    if x_r_cutoff:
+        if label[0] > x_r_cutoff + width:
+            return None
+    if y_u_cutoff:
+        if label[1] > y_u_cutoff:
+            label = (label[0], label[1] - y_u_cutoff)
+        else:
+            return None
+    if y_d_cutoff:
+        if label[1] > y_d_cutoff + height:
+            return None
+    label = (label[0] * width / (width - x_l_cutoff + x_r_cutoff),
+             label[1] * height / (height - y_u_cutoff + y_d_cutoff))
+    return label

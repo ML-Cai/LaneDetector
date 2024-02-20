@@ -24,7 +24,7 @@ def tflite_image_test(tflite_model_quant_file, folder_path, with_post_process=Tr
     # Load the model onto the Edge TPU
     interpreter = tf.lite.Interpreter(model_path=str(tflite_model_quant_file),
                                       experimental_delegates=[tf.lite.experimental.load_delegate(
-                                          "C:/Users/inf21034/OneDrive - Duale Hochschule Baden-Württemberg Stuttgart/Dokumente/edgetpu_runtime/libedgetpu/direct/x64_windows/edgetpu.dll")])
+                                          "edgetpu.dll")])
     # interpreter = Interpreter(model_path=str(tflite_model_quant_file),
     #                           experimental_delegates=[load_delegate('libedgetpu.so.1')])
     interpreter.allocate_tensors()

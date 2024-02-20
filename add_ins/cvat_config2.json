@@ -7,77 +7,77 @@
         960
       ],
       "image_p0": [
-        732,
-        284
+        719,
+        270
       ],
       "image_p1": [
-        757,
-        331
+        734,
+        317
       ],
       "image_p2": [
-        545,
-        335
+        535,
+        328
       ],
       "image_p3": [
-        569,
-        288
+        544,
+        279
       ],
       "ground_p0": [
-        748,
-        616
+        596,
+        710
       ],
       "ground_p1": [
-        748,
-        833
+        596,
+        790
       ],
       "ground_p2": [
-        532,
-        833
+        675,
+        790
       ],
       "ground_p3": [
-        532,
-        616
+        675,
+        710
       ],
       "matrix_path": "add_ins/perspective_matrix.pkl"
     },
     "2023-10-04": {
-        "image_size": [
-            1280,
-            960
-        ],
-        "image_p0": [
-            732,
-            284
-        ],
-        "image_p1": [
-            757,
-            331
-        ],
-        "image_p2": [
-            545,
-            335
-        ],
-        "image_p3": [
-            569,
-            288
-        ],
-        "ground_p0": [
-            748,
-            616
-        ],
-        "ground_p1": [
-            748,
-            833
-        ],
-        "ground_p2": [
-            532,
-            833
-        ],
-        "ground_p3": [
-            532,
-            616
-        ],
-        "matrix_path": "add_ins/perspective_matrix.pkl"
+      "image_size": [
+        1280,
+        960
+      ],
+      "image_p0": [
+        719,
+        270
+      ],
+      "image_p1": [
+        734,
+        317
+      ],
+      "image_p2": [
+        535,
+        328
+      ],
+      "image_p3": [
+        544,
+        279
+      ],
+      "ground_p0": [
+        596,
+        710
+      ],
+      "ground_p1": [
+        596,
+        790
+      ],
+      "ground_p2": [
+        675,
+        790
+      ],
+      "ground_p3": [
+        675,
+        710
+      ],
+      "matrix_path": "add_ins/perspective_matrix.pkl"
     }
   },
   "model_info": {
@@ -87,10 +87,10 @@
     ],
     "ground_scale_width": 0.16,
     "ground_scale_height": 0.1,
-    "x_anchors": 64,
-    "y_anchors": 64,
+    "x_anchors": 32,
+    "y_anchors": 32,
     "max_lane_count": 3,
-    "checkpoint_path": "tmp/perspective-checkpoint1/",
-    "tflite_model_name": "model_cvat1.tflite"
+    "checkpoint_path": "tmp/perspective-checkpoint2/",
+    "tflite_model_name": "model_cvat2.tflite"
   }
 }
