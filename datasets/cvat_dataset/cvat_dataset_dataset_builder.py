@@ -17,9 +17,9 @@ cnt_unique = 0
 class Builder(tfds.core.GeneratorBasedBuilder):
     """DatasetBuilder for cvat_dataset dataset."""
 
-    VERSION = tfds.core.Version('1.4.1')
+    VERSION = tfds.core.Version('1.4.4')
     RELEASE_NOTES = {
-        '1.4.1': 'Updated Matrices',
+        '1.4.4': 'Only new data in validation set',
     }
 
     def _info(self) -> tfds.core.DatasetInfo:
@@ -74,9 +74,12 @@ class Builder(tfds.core.GeneratorBasedBuilder):
         for image_ary, label_lanes, label_h_samples, refIdx, day_of_recording in _data_reader(path, label_data_name,
                                                                             augmentation_deg):
             # Generate a unique key for each example
+            # if "12" not in day_of_recording:
+            #     continue
             key = cnt_unique
             cnt_unique += 1
             H_list, map_x_list, map_y_list = perspective_infos[day_of_recording]
+            cutoffs = config["perspective_info"][day_of_recording]["cutoffs"]
             img, label = _map_projection_data_generator(image_ary,
                                                         label_lanes,
                                                         label_h_samples,
@@ -87,7 +90,8 @@ class Builder(tfds.core.GeneratorBasedBuilder):
                                                         H_list[refIdx],
                                                         map_x_list[refIdx],
                                                         map_y_list[refIdx],
-                                                        ground_img_size
+                                                        ground_img_size,
+                                                        cutoffs
                                                         )
             yield key, {
                 "image": img,
@@ -238,31 +242,33 @@ def _map_projection_data_generator(src_image,
                                    H,
                                    map_x,
                                    map_y,
-                                   groundSize):
+                                   groundSize,
+                                   cutoffs):
     # transform image by perspective matrix
     # height, width = src_image.shape[:2]
     # if width != 1280 or height != 720:
     #     src_image = cv2.resize(src_image, (1280, 720))
-    src_img_cpy = src_image.copy()
-    for l in label_lanes:
-        for sz in range(len(label_h_samples)):
-            cv2.circle(src_img_cpy, (int(l[sz]), int(label_h_samples[sz])), 2, (0, 255, 0), -1)
+    # src_img_cpy = src_image.copy()
+    # for l in label_lanes:
+    #     for sz in range(len(label_h_samples)):
+    #         cv2.circle(src_img_cpy, (int(l[sz]), int(label_h_samples[sz])), 2, (0, 255, 0), -1)
 
     gImg = cv2.remap(src_image, np.array(map_x), np.array(map_y),
                      interpolation=cv2.INTER_NEAREST,
                      borderValue=(125, 125, 125))
 
-    gImg = gImg[100:-1, 30:-30]
-    gImg = cv2.resize(gImg, (net_input_img_size[1], net_input_img_size[0]))
+    # l_c, r_c, u_c, d_c = cutoffs
+    # gImg = gImg[u_c:d_c, l_c:r_c]
+    # gImg = cv2.resize(gImg, (net_input_img_size[1], net_input_img_size[0]))
 
     #################################
     height, width = gImg.shape[:2]
     grid_size = 32
-    for x in range(0, width, width // grid_size):
-        cv2.line(gImg, (x, 0), (x, height), (255, 0, 0), 1)  # Blue lines
-
-    for y in range(0, height, height // grid_size):
-        cv2.line(gImg, (0, y), (width, y), (255, 0, 0), 1)  # Blue lines
+    # for x in range(0, width, width // grid_size):
+    #     cv2.line(gImg, (x, 0), (x, height), (255, 0, 0), 1)  # Blue lines
+    #
+    # for y in range(0, height, height // grid_size):
+    #     cv2.line(gImg, (0, y), (width, y), (255, 0, 0), 1)  # Blue lines
 
     #################################
 
@@ -319,11 +325,11 @@ def _map_projection_data_generator(src_image,
             # conver to anchor coordinate(grid)
             gx = int(gx / gz)
             gy = int(gy / gz)
-            resized = _resize_transformed_labels((gx, gy), net_input_img_size, (30, -30, 100, -1))
-            if resized is None:
-                continue
-            gx, gy = resized
-            cv2.circle(gImg, (int(gx), int(gy)), 2, (0, 255, 0), -1)
+            # resized = _resize_transformed_labels((gx, gy), net_input_img_size, cutoffs=cutoffs)
+            # if resized is None:
+            #     continue
+            # gx, gy = resized
+            # cv2.circle(gImg, (int(gx), int(gy)), 2, (0, 255, 0), -1)
             if gx < 0 or gy < 0 or gx >= (groundSize[1] - 1) or gy >= (groundSize[0] - 1):
                 continue
 

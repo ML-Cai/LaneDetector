@@ -12,8 +12,10 @@ def main():
     lanes = [line for line in open(annotation_path, 'r')]
     # train_set = [lane for lane in lanes if not any([n in lane for n in ["2023-10-02-13-51-53", "2023-10-02-13-52-29", "2023-10-04-17-25-29"]])]
     # test_set = [lane for lane in lanes if any([n in lane for n in ["2023-10-02-13-51-53", "2023-10-02-13-52-29", "2023-10-04-17-25-29"]])]
-    train_set = lanes[:int(len(lanes) * 0.8)]
-    test_set = lanes[int(len(lanes) * 0.8):]
+    # train_set = lanes[:int(len(lanes) * 0.8)]
+    # test_set = lanes[int(len(lanes) * 0.8):]
+    train_set = lanes[200:]
+    test_set = lanes[:200]
     with open(os.path.join(annotation_dir, "train_set.json"), 'w') as f:
         for line in train_set:
             f.write(line)

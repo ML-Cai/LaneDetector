@@ -25,6 +25,7 @@ class CVATDataset:
         self.images.append(image)
 
     def to_tusimple(self):
+        # set y_samples
         for image in self.images:
             if not image.annotations:
                 print("No annotations for image")
@@ -36,6 +37,23 @@ class CVATDataset:
                 self.max_y = max_y
         steps = (self.max_y - self.min_y) // 10
         y_samples = np.linspace(self.min_y, self.max_y, steps + 1, dtype=np.int32)
+
+        # print("Height: " + str(self.images[0].image_height))
+        #
+        # height = self.images[0].image_height
+        #
+        # tens = int(height) // 10
+        # print("Tens: " + str(tens))
+        #
+        # tens_twenty_percent = tens // 5
+        # print("Tens twenty percent: " + str(tens_twenty_percent))
+        #
+        # minimal_start = tens_twenty_percent * 10
+        # print("Minimal start: " + str(minimal_start))
+        #
+        # print( tens - tens_twenty_percent +1)
+        #
+        # y_samples = np.linspace(minimal_start, int(height), tens - tens_twenty_percent +1, dtype=np.int32)
         for image in self.images:
             image.to_tusimple(y_samples)
 
@@ -168,7 +186,7 @@ class CvatOneLane:
         x_samples = x_samples - 2
         self.y_samples = y_samples
         for k, point in enumerate(self.points):
-            # interpolate between points so I have for every y_sample a x_value
+            # interpolate between points, so I have for every y_sample an x_value
             x1, y1 = point
 
             if k == len(self.points) - 1:
@@ -191,6 +209,8 @@ class CvatOneLane:
                     # check how often 10 can get into y1
                     how_often = y1 // 10
                     # how_often = len(y_samples) - how_often - 1
+                    if how_often >= len(y_samples):
+                        continue
                     x_samples[how_often] = x1
 
             x2, y2 = self.points[k + 1]
@@ -199,7 +219,7 @@ class CvatOneLane:
                 break
 
             if str(y1)[:-1] == str(y2)[:-1]:
-                # skip points becauuse they dont cross a y_sample
+                # skip points because they don't cross a y_sample
                 continue
             else:
                 # use polyfit
@@ -213,6 +233,9 @@ class CvatOneLane:
                         # calculate x value for y
                         x = m * y + b
                         how_often = y // 10
+
+                        if how_often >= len(y_samples):
+                            continue
                         # how_often = len(y_samples) - how_often - 1
                         x_samples[how_often] = x
 
@@ -233,11 +256,11 @@ class CvatOneLane:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--annotation_path', required=True, help='The path to the CVAT annotation file')
-    parser.add_argument('--image_path', required=False, help='The path to the images')
+    # parser.add_argument('--image_path', required=False, help='The path to the images')
     args = parser.parse_args()
     annotation_path = args.annotation_path
     annotation_folder = os.path.dirname(annotation_path)
-    image_path = args.image_path
+    # image_path = args.image_path
 
     tree = ET.parse(annotation_path)
     root = tree.getroot()

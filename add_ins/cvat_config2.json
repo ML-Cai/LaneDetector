@@ -38,7 +38,13 @@
         675,
         710
       ],
-      "matrix_path": "add_ins/perspective_matrix.pkl"
+      "matrix_path": "add_ins/perspective_matrix.pkl",
+      "cutoffs": [
+        30,
+        -30,
+        100,
+        -1
+      ]
     },
     "2023-10-04": {
       "image_size": [
@@ -77,7 +83,58 @@
         675,
         710
       ],
-      "matrix_path": "add_ins/perspective_matrix.pkl"
+      "matrix_path": "add_ins/perspective_matrix.pkl",
+      "cutoffs": [
+        30,
+        -30,
+        100,
+        -1
+      ]
+    },
+    "2023-12-19": {
+      "image_size": [
+        1280,
+        960
+      ],
+      "image_p0": [
+        718,
+        268
+      ],
+      "image_p1": [
+        745,
+        320
+      ],
+      "image_p2": [
+        530,
+        327
+      ],
+      "image_p3": [
+        552,
+        274
+      ],
+      "ground_p0": [
+        596,
+        710
+      ],
+      "ground_p1": [
+        596,
+        790
+      ],
+      "ground_p2": [
+        675,
+        790
+      ],
+      "ground_p3": [
+        675,
+        710
+      ],
+      "matrix_path": "add_ins/perspective_matrix.pkl",
+      "cutoffs": [
+        65,
+        -65,
+        100,
+        -1
+      ]
     }
   },
   "model_info": {
@@ -90,7 +147,7 @@
     "x_anchors": 32,
     "y_anchors": 32,
     "max_lane_count": 3,
-    "checkpoint_path": "tmp/perspective-checkpoint2/",
-    "tflite_model_name": "model_cvat2.tflite"
+    "checkpoint_path": "tmp/perspective-checkpoint3/",
+    "tflite_model_name": "model_cvat3.tflite"
   }
 }
