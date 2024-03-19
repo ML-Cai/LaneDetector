@@ -88,25 +88,25 @@ class TusimpleLane:
                                                                    )
         )
 
-        # pipe = pipe.map(
-        #     # convert data to training label and norimalization
-        #     lambda image, label_lanes, label_h_samples, refIdx:
-        #     tf.numpy_function(func=_map_projection_data_generator,
-        #                       inp=[image,
-        #                            label_lanes,
-        #                            label_h_samples,
-        #                            x_anchors,
-        #                            y_anchors,
-        #                            max_lane_count,
-        #                            H_list[refIdx],
-        #                            map_x_list[refIdx],
-        #                            map_y_list[refIdx],
-        #                            ground_img_size],
-        #                       Tout=[tf.dtypes.float32,
-        #                             tf.dtypes.float32])
-        #     ,
-        #     num_parallel_calls=tf.data.experimental.AUTOTUNE
-        # )
+        pipe = pipe.map(
+            # convert data to training label and norimalization
+            lambda image, label_lanes, label_h_samples, refIdx:
+            tf.numpy_function(func=_map_projection_data_generator,
+                              inp=[image,
+                                   label_lanes,
+                                   label_h_samples,
+                                   x_anchors,
+                                   y_anchors,
+                                   max_lane_count,
+                                   H_list[refIdx],
+                                   map_x_list[refIdx],
+                                   map_y_list[refIdx],
+                                   ground_img_size],
+                              Tout=[tf.dtypes.float32,
+                                    tf.dtypes.float32])
+            ,
+            num_parallel_calls=tf.data.experimental.AUTOTUNE
+        )
 
         pipe = pipe.prefetch(  # Overlap producer and consumer works
             tf.data.experimental.AUTOTUNE
@@ -226,24 +226,24 @@ def create_map(config, day_of_recording: str,
     gw, gh = ground_size
 
     # calc homography (TuSimple fake)
-    src_points = [transformation_settings["image_p0"],
-                  transformation_settings["image_p1"],
-                  transformation_settings["image_p2"],
-                  transformation_settings["image_p3"]]
-    dst_points = [transformation_settings["ground_p0"],
-                  transformation_settings["ground_p1"],
-                  transformation_settings["ground_p2"],
-                  transformation_settings["ground_p3"]]
-    # ground_scale_width = config["model_info"]["ground_scale_width"]
-    # ground_scale_height = config["model_info"]["ground_scale_height"]
+    imgP = [transformation_settings["image_p0"],
+            transformation_settings["image_p1"],
+            transformation_settings["image_p2"],
+            transformation_settings["image_p3"]]
+    groundP = [transformation_settings["ground_p0"],
+               transformation_settings["ground_p1"],
+               transformation_settings["ground_p2"],
+               transformation_settings["ground_p3"]]
+    ground_scale_width = config["model_info"]["ground_scale_width"]
+    ground_scale_height = config["model_info"]["ground_scale_height"]
 
     # We only use one perspective matrix for image transform, therefore, all images
     # at dataset must have same size, or the perspective transormation may fail.
     # In default, we assume the camera image input size is 1280x720, so the following
     # step will resize the image point for size fitting.
-    # for i in range(len(src_points)):
-    #     src_points[i][0] *= w / 1280.0
-    #     src_points[i][1] *= h / 720.0
+    # for i in range(len(imgP)):
+    #     imgP[i][0] *= w / 1280.0
+    #     imgP[i][1] *= h / 720.0
 
     # Scale the ground points, we assume the camera position is center of perspectived image,
     # as shown at following codes :
@@ -261,27 +261,27 @@ def create_map(config, day_of_recording: str,
     #     # -x ----------C------------+x #
     #     ################################
     #
-    for i in range(len(dst_points)):
-        dst_points[i][0] = dst_points[i][0] * gw / w  # ground_scale_width + gw / 2.0
-        dst_points[i][1] = dst_points[i][1] * gh / h  # gh - dst_points[i][1] * ground_scale_height
+    # for i in range(len(groundP)):
+    #     groundP[i][0] = groundP[i][0] * gw / w  # ground_scale_width + gw / 2.0
+    #     groundP[i][1] = groundP[i][1] * gh / h  # gh - groundP[i][1] * ground_scale_height
 
     list_H = []
     list_map_x = []
     list_map_y = []
 
-    groud_center = tuple(np.average(dst_points, axis=0))
+    groud_center = tuple(np.average(groundP, axis=0))
     if augmentation_deg is None:
         augmentation_deg = [0.0]
 
     for deg in augmentation_deg:
-        # TODO: Mirror image for augmentation; not possible with 2D perspective transform
         R = cv2.getRotationMatrix2D(groud_center, deg, 1.0)
         rotate_groupP = []
-        for gp in dst_points:
+        for gp in groundP:
             pp = np.matmul(R, [[gp[0]], [gp[1]], [1.0]])
             rotate_groupP.append([pp[0], pp[1]])
 
-        H, _ = cv2.findHomography(np.float32(src_points), np.float32(rotate_groupP))
+        # H, _ = cv2.findHomography(np.float32(imgP), np.float32(rotate_groupP))
+        H = cv2.getPerspectiveTransform(np.float32(imgP), np.float32(rotate_groupP))
         _, invH = cv2.invert(H)
 
         map_x = np.zeros((gh, gw), dtype=np.float32)
@@ -292,7 +292,7 @@ def create_map(config, day_of_recording: str,
                 nx, ny, nz = np.matmul(invH, [[gx], [gy], [1.0]])
                 nx /= nz
                 ny /= nz
-                if 0 <= nx < w and 0 <= ny < h:
+                if 0 <= nx < gw and 0 <= ny < gh:
                     map_x[gy][gx] = nx
                     map_y[gy][gx] = ny
                 else:
@@ -309,21 +309,47 @@ def create_map(config, day_of_recording: str,
 def _map_projection_data_generator(src_image,
                                    label_lanes,
                                    label_h_samples,
+                                   net_input_img_size,
                                    x_anchors,
                                    y_anchors,
                                    max_lane_count,
                                    H,
                                    map_x,
                                    map_y,
-                                   groundSize):
+                                   groundSize,
+                                   cutoffs):
     # transform image by perspective matrix
-    # height, width = src_image.shape[:2]
+    height, width = src_image.shape[:2]
     # if width != 1280 or height != 720:
     #     src_image = cv2.resize(src_image, (1280, 720))
+    # src_img_cpy = src_image.copy()
+    # for l in label_lanes:
+    #     for sz in range(len(label_h_samples)):
+    #         cv2.circle(src_img_cpy, (int(l[sz]), int(label_h_samples[sz])), 2, (0, 255, 0), -1)
 
-    gImg = cv2.remap(src_image, np.array(map_x), np.array(map_y),
-                     interpolation=cv2.INTER_NEAREST,
-                     borderValue=(125, 125, 125))
+    # gImg = cv2.remap(src_image, np.array(map_x), np.array(map_y),
+    #                  interpolation=cv2.INTER_NEAREST,
+    #                  borderValue=(125, 125, 125))
+
+    # Multiplying the transformation matrix with an identity matrix in numpy transforms the "Eager Tensor" to a numpy array
+    # cv2.warpPerspective() requires a numpy array as input and will fail on an "Eager Tensor"
+    gImg = cv2.warpPerspective(src_image, np.matmul(H, np.eye(3, 3)), (1280, 960), flags=cv2.INTER_LINEAR,)
+
+    l_c, r_c, u_c, d_c = cutoffs
+    gImg = gImg[u_c:d_c, l_c:r_c]
+    gImg = cv2.resize(gImg, (net_input_img_size[1], net_input_img_size[0]))
+
+    #################################
+    # t_height, t_width = gImg.shape[:2]
+    grid_size = 32
+    # for x in range(0, t_width, t_width // grid_size):
+    #     cv2.line(gImg, (x, 0), (x, t_height), (255, 0, 0), 1)  # Blue lines
+    #
+    # for y in range(0, t_height, t_height // grid_size):
+    #     cv2.line(gImg, (0, y), (t_width, y), (255, 0, 0), 1)  # Blue lines
+
+    #################################
+
     imgf = np.float32(gImg) * (1.0 / 255.0)
     # cv2.imwrite("test.jpg", gImg)
 
@@ -354,6 +380,9 @@ def _map_projection_data_generator(src_image,
     anchor_scale_x = float(x_anchors) / float(groundSize[1])
     anchor_scale_y = float(y_anchors) / float(groundSize[0])
 
+
+    # bool to indicate if any lane has been added. if no lane has been added, return none
+    lane_added = False
     # calculate anchor offsets
     for laneIdx in range(min(len(label_lanes), max_lane_count)):
         lane_data = label_lanes[laneIdx]
@@ -371,12 +400,21 @@ def _map_projection_data_generator(src_image,
 
             # do perspective transform at dx, dy
             gx, gy, gz = np.matmul(H, [[dx], [dy], [1.0]])
-            if gz > 0:
+            if gz == 0:
                 continue
 
             # conver to anchor coordinate(grid)
             gx = int(gx / gz)
             gy = int(gy / gz)
+            resized = _resize_transformed_labels((gx, gy),
+                                                 (width, height),
+                                                 (400, 400),
+                                                 (net_input_img_size[0], net_input_img_size[1]),
+                                                 cutoffs=cutoffs)
+            if resized is None:
+                continue
+            gx, gy = resized
+            cv2.circle(gImg, (int(gx), int(gy)), 2, (0, 255, 0), -1)
             if gx < 0 or gy < 0 or gx >= (groundSize[1] - 1) or gy >= (groundSize[0] - 1):
                 continue
 
@@ -403,6 +441,7 @@ def _map_projection_data_generator(src_image,
                     label[ay][ax][x_offset_idx] += math.log(offset + 0.0001)
                     label[ay][ax][instance_label_idx] = instance_label_value
                     acc_count[ay][ax][x_offset_idx] = 1
+                    lane_added = True
                 else:
                     gA = np.array([prev_gx, prev_gy])
                     gB = np.array([gx, gy])
@@ -425,10 +464,37 @@ def _map_projection_data_generator(src_image,
                         label[ay][ax][class_idx:class_idx + class_count] = class_list['lane_marking']
                         label[ay][ax][instance_label_idx] = instance_label_value
                         acc_count[ay][ax][x_offset_idx] = 1
+                        lane_added = True
 
                 prev_gx = gx
                 prev_gy = gy
                 prev_ax = ax
                 prev_ay = ay
-
+    # global imagecnt
+    # with open(f"images/outpt_imgs/{imagecnt:03d}.jpg", "wb") as f:
+    #     f.write(cv2.imencode('.jpg', gImg)[1])
+    # imagecnt += 1
+    if not lane_added:
+        return None, None
     return imgf, label
+
+
+def _resize_transformed_labels(label, previous_shape, cutoff_shape, resize_shape, cutoffs):
+    c_width, c_height  = cutoff_shape[:2]
+    r_width, r_height  = resize_shape[:2]
+    p_width, p_height = previous_shape[:2]
+    x_l_cutoff, x_r_cutoff, y_u_cutoff, y_d_cutoff = cutoffs
+
+    x_l_cutoff = x_l_cutoff if x_l_cutoff >= 0 else p_width + x_l_cutoff
+    x_r_cutoff = x_r_cutoff if x_r_cutoff > 0 else p_width + x_r_cutoff
+    y_u_cutoff = y_u_cutoff if y_u_cutoff >= 0 else p_height + y_u_cutoff
+    y_d_cutoff = y_d_cutoff if y_d_cutoff > 0 else p_height + y_d_cutoff
+
+    if x_l_cutoff < label[0] < x_r_cutoff and y_u_cutoff < label[1] < y_d_cutoff:
+        label = (label[0] - x_l_cutoff, label[1] - y_u_cutoff)
+    else:
+        return None
+
+    label = (label[0] * r_width // c_width ,
+             label[1] * r_height // c_height )
+    return label
