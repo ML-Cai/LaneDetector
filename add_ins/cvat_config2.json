@@ -40,10 +40,10 @@
       ],
       "matrix_path": "add_ins/perspective_matrix.pkl",
       "cutoffs": [
-        30,
-        -30,
-        100,
-        -1
+        500,
+        900,
+        350,
+        750
       ]
     },
     "2023-10-04": {
@@ -85,10 +85,10 @@
       ],
       "matrix_path": "add_ins/perspective_matrix.pkl",
       "cutoffs": [
-        30,
-        -30,
-        100,
-        -1
+        500,
+        900,
+        350,
+        750
       ]
     },
     "2023-12-19": {
@@ -130,10 +130,10 @@
       ],
       "matrix_path": "add_ins/perspective_matrix.pkl",
       "cutoffs": [
-        65,
-        -65,
-        100,
-        -1
+        450,
+        850,
+        450,
+        850
       ]
     }
   },
@@ -147,7 +147,7 @@
     "x_anchors": 32,
     "y_anchors": 32,
     "max_lane_count": 3,
-    "checkpoint_path": "tmp/perspective-checkpoint3/",
-    "tflite_model_name": "model_cvat3.tflite"
+    "checkpoint_path": "tmp/perspective-checkpoint4/",
+    "tflite_model_name": "model_cvat4.tflite"
   }
 }

@@ -11,16 +11,18 @@ import math
 import datasets.cvat_dataset
 import tensorflow_datasets as tfds
 from datasets import TusimpleLane
+from eval import LaneDetectionEval
 
 # --------------------------------------------------------------------------------------------------------------
 def tflite_image_test(tflite_model_quant_file,
                       dataset,
-                      with_post_process=False):
+                      with_post_process=False,
+                      mtx=None):
     # load model from saved model
-    interpreter = tf.lite.Interpreter(model_path=str(tflite_model_quant_file),
-                                      experimental_delegates=[tf.lite.experimental.load_delegate(
-                                          "edgetpu.dll")]
-                                      )
+    interpreter = tf.lite.Interpreter(model_path=str(tflite_model_quant_file)) #,
+                                      #experimental_delegates=[tf.lite.experimental.load_delegate(
+                                      #    "edgetpu.dll")]
+                                      #)
     interpreter.allocate_tensors()
 
     # get index of inputs and outputs
@@ -32,14 +34,30 @@ def tflite_image_test(tflite_model_quant_file,
     # get part of data from output tensor
     _, _, _, max_instance_count = output_index_instance['shape']
     _, y_anchors, x_anchors, _ = output_index_anchor_axis['shape']
-        
+
+    files = []
+    with open("../../source/IMG_ROOTS/1280x960_CVATROOT/test_set/test_set.json", "r") as inf:
+        files = [json.loads(i)["raw_file"] for i in inf]
 
     COLORS = [(0, 0, 255), (0, 255, 0), (255, 0, 0), 
               (0, 255, 255), (255, 0, 255), (255, 255, 0) ]
 
+    total_accs = []
+    fp_accs = []
+    fn_accs = []
+
     for k, elem in enumerate(dataset):
-        test_img = elem[0]
+        test_img = elem[0] # np.zeros((1, 256, 256, 3), dtype=np.uint8)
+        # tmp_img = cv2.imread("../../source/IMG_ROOTS/1280x960_CVATROOT/test_set/" + elem)# elem[0]
         test_label = elem[1]
+
+
+        # if mtx is not None:
+        #     tmp_img = cv2.warpPerspective(tmp_img, mtx, (1280, 960))
+
+        # l_c, r_c, u_c, d_c = [430, 870, 440, 880]
+        # tmp_img = tmp_img[u_c:d_c, l_c:r_c]
+        # test_img[0] = cv2.resize(tmp_img, (256, 256))
 
         if input_index['dtype']== np.uint8:
             test_img = np.uint8(test_img * 255)
@@ -51,12 +69,19 @@ def tflite_image_test(tflite_model_quant_file,
         instance = interpreter.get_tensor(output_index_instance["index"])
         offsets = interpreter.get_tensor(output_index_offsets["index"])
         anchor_axis = interpreter.get_tensor(output_index_anchor_axis["index"])
-    
+
+        acc_dict = LaneDetectionEval.evaluate_predictions((instance, offsets, anchor_axis), test_label)
+        accuracy = acc_dict["accuracy"]
+        fp = acc_dict["fp_rate"]
+        fn = acc_dict["fn_rate"]
+        total_accs.append((sum(total_accs) + accuracy) / (k+1))
+        fp_accs.append((sum(fp_accs) + fp) / (k+1))
+        fn_accs.append((sum(fn_accs) + fn) / (k+1))
 
         # convert image to gray 
         main_img = cv2.cvtColor(test_img[0], cv2.COLOR_BGR2GRAY)
         main_img = cv2.cvtColor(main_img, cv2.COLOR_GRAY2BGR)
-        
+
         # post processing
         if not with_post_process:
             # rendering
@@ -144,11 +169,12 @@ def tflite_image_test(tflite_model_quant_file,
                 cv2.line(main_img, (int(px), 0), (int(px), target_szie[1]), (125, 125, 125))
                 cv2.line(main_img, (0, int(py)), (target_szie[0], int(py)), (125, 125, 125))
 
-        cv2.imwrite(f"images/outpt_imgs/frame{k:03d}.jpg", main_img)
+        # print(f"writing image: {k:03d}")
+        # cv2.imwrite(f"images/outpt_imgs/frame{k:03d}.jpg", main_img)
         # plt.figure(figsize = (8,8))
         # plt.imshow(main_img)
         # plt.show()
-
+    return total_accs, fp_accs, fn_accs
 
 # --------------------------------------------------------------------------------------------------
 if __name__ == '__main__':
@@ -163,6 +189,12 @@ if __name__ == '__main__':
     checkpoint_path     = config["model_info"]["checkpoint_path"]
     tflite_model_name   = config["model_info"]["tflite_model_name"]
 
+    persp_info = config["perspective_info"]["2023-12-19"]
+
+    src_points = [(persp_info[f"image_p{i}"][0], persp_info[f"image_p{i}"][1]) for i in range(4)]
+    dst_points = [(persp_info[f"ground_p{i}"][0] , persp_info[f"ground_p{i}"][1] ) for i in range(4)]
+    mtx = cv2.getPerspectiveTransform(np.array(src_points, dtype=np.float32),
+                                      np.array(dst_points, dtype=np.float32))
 
     if not os.path.exists(tflite_model_name):
         print("tlite model doesn't exist, please run \"generate_tflite_nidel.py\" first to convert tflite model.")
@@ -187,7 +219,7 @@ if __name__ == '__main__':
     #                                       test_label_set,
     #                                       config,
     #                                       augmentation=False).get_pipe()
-    valid_batches = tfds.load('cvat_dataset', split='test', shuffle_files=True, as_supervised=True)
+    valid_batches = tfds.load('cvat_dataset', split='test', shuffle_files=False, as_supervised=True)
     # TusimpleLane(test_dataset_path, test_label_set, config).get_pipe()
     #tfds.load('cvat_dataset', split='test', shuffle_files=True, as_supervised=True)
     valid_batches = valid_batches.batch(1)
@@ -195,5 +227,14 @@ if __name__ == '__main__':
     print("---------------------------------------------------")
     print("Load model as TF-Lite and test")
     print("---------------------------------------------------")
-    tflite_image_test(tflite_model_name, valid_batches, True)
-   
+    accs_t, accs_fp, accs_fn = tflite_image_test(tflite_model_name, valid_batches, True, mtx)
+    plt.plot(range(len(accs_t)), accs_t,  'm--', label="accuracy")
+    plt.savefig("images/accuracy.png")
+    plt.clf()
+    plt.plot(range(len(accs_fp)), accs_fp,  'm--', label="false positive")
+    plt.savefig("images/false_positive.png")
+    plt.clf()
+    plt.plot(range(len(accs_fn)), accs_fn, 'm--', label="false negative")
+    plt.savefig("images/false_negative.png")
+    plt.clf()
+
