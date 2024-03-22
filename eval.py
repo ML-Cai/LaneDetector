@@ -4,7 +4,7 @@ import tensorflow as tf
 import math
 
 class LaneDetectionEval:
-    offset_thresh = 1  # Acceptable offset difference for correct detection
+    offset_thresh = (256 / 32) / 2  # Acceptable offset difference for correct detection
     pt_thresh = 0.85  # Threshold for match percentage to consider a detection correct
 
     @staticmethod
