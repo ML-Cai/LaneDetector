@@ -1,6 +1,7 @@
 import tensorflow as tf
+import sys
 
-
+losscnt = 0
 def DiscriminativeLoss_single(y_true,
                               y_pred,
                               delta_v,
@@ -12,7 +13,6 @@ def DiscriminativeLoss_single(y_true,
     label_shape = tf.shape(y_true)      # [height, width]
     pred_shape = tf.shape(y_pred)       # [height, width, feature_dim]
     feature_dim = pred_shape[2]
-
     correct_label = tf.reshape(y_true, [label_shape[1] * label_shape[0]])
     reshaped_pred = tf.reshape(y_pred, [pred_shape[1] * pred_shape[0], feature_dim])
 
@@ -44,7 +44,6 @@ def DiscriminativeLoss_single(y_true,
     mu_band_rep = tf.reshape(mu_band_rep, (num_instances * num_instances, feature_dim))
 
     mu_diff = tf.subtract(mu_band_rep, mu_interleaved_rep)
-
     intermediate_tensor = tf.reduce_sum(tf.abs(mu_diff), axis=1)
     zero_vector = tf.zeros(1, dtype=tf.float32)
     bool_mask = tf.not_equal(intermediate_tensor, zero_vector)
@@ -67,6 +66,17 @@ def DiscriminativeLoss_single(y_true,
 
     loss = param_scale * (l_var + l_dist + l_reg)
 
+    if tf.math.is_nan(loss):
+        with open("loss.txt", "a") as f:
+            f.write(f"l_var {l_var}, l_dist: {l_dist}, l_reg: {l_reg}\n")
+            # print out all values of correct_label
+            f.write("correct label: ")
+            for i in range(tf.size(correct_label)):
+                f.write(f"{correct_label[i]} ")
+            f.write("\n")
+            # f.write(f"correct label: {correct_label}\n")
+        print("nan loss")
+
     return loss
 
 def smooth_L1_loss(y_true, y_pred):
@@ -81,7 +91,6 @@ def log_loss(y_true, y_pred):
     # reference from https://github.com/pierluigiferrari/ssd_keras/blob/master/keras_loss_function/keras_ssd_loss.py
     # Make sure that `y_pred` doesn't contain any zeros (which would break the log function)
     y_pred = tf.maximum(y_pred, 1e-15)
-    
     # Compute the log loss
     log_loss = -tf.reduce_sum(y_true * tf.math.log(y_pred), axis=-1)
     return log_loss
@@ -92,7 +101,6 @@ def LaneLoss(coeff = 1.0):
 
         true_cls = tf.slice(y_true, [0, 0, 0, 0], [-1, -1, -1, 2])
         pred_cls = tf.slice(y_pred, [0, 0, 0, 0], [-1, -1, -1, 2])
-
         true_offset = tf.slice(y_true, [0, 0, 0, 2], [-1, -1, -1, 1])
         pred_offset = tf.slice(y_pred, [0, 0, 0, 2], [-1, -1, -1, 1])
 
@@ -125,6 +133,7 @@ def LaneLoss(coeff = 1.0):
                                               param_var=param_var,
                                               param_dist=param_dist,
                                               param_reg=param_reg)
+
             return y_true_instance, y_pred_instance, loss, loopIdx +1
         
 
@@ -132,6 +141,9 @@ def LaneLoss(coeff = 1.0):
         _, _, loss, _ = tf.while_loop(cond=loop_cond,
                                       body=loop_body,
                                       loop_vars=[y_true_instance, y_pred_instance, loss, 0])
+        if tf.math.is_nan(loss) or tf.math.is_inf(loss) or loss > 1000 or loss < 0:
+            with open('nan_loss.txt', 'a') as f:
+                f.write(f"loss {loss}\n")
         return (loss_cls + loss_offset) + 0.01 * loss
 
     return _LaneLoss

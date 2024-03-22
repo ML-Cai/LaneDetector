@@ -12,7 +12,10 @@ import tensorflow_datasets as tfds
 # --------------------------------------------------------------------------------------------------------------
 def representative_data_gen(dataset):
     def _gen():
-        for input_value in dataset:
+        for k, input_value in enumerate(dataset):
+            print("Processing image : ", k)
+            # if k > 100:
+            #     break
             yield [input_value[0]]
 
     return _gen
